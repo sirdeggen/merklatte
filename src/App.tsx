@@ -14,9 +14,9 @@ import {
   createTheme,
   Alert
 } from "@mui/material";
+import CssBaseline from '@mui/material/CssBaseline';
 import { BlockDataProvider } from "./BlockDataProvider.tsx";
 import { BlockInput } from "./BlockInput.tsx";
-import CssBaseline from '@mui/material/CssBaseline';
 
 const theme = createTheme({
   palette: {
@@ -57,25 +57,26 @@ function App() {
           </Typography>
         </Paper>
         <ResetProvider>
-          <BlockDataProvider>
-            <MerkleProofProvider>
-              <Paper elevation={2} sx={{ p: 4, overflow: 'hidden' }}>
-                <BlockInput />
-              <MerkleTreeSizeSelector />
-                <Box sx={{ overflow: 'auto', mt: 2, maxHeight: 600 }}>
-                  <MerkleTreeView />
+          <MerkleTreeProvider>
+            <BlockDataProvider>
+              <MerkleProofProvider>
+                <Paper elevation={2} sx={{ p: 4, overflow: 'hidden' }}>
+                  <BlockInput />
+                  <MerkleTreeSizeSelector />
+                  <Box sx={{ overflow: 'auto', mt: 2, maxHeight: 600 }}>
+                    <MerkleTreeView />
+                  </Box>
+                </Paper>
+                <Box sx={{ mt: 4, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  <Paper elevation={2} sx={{ p: 3, flex: 1, minWidth: 400 }}>
+                    <BsvUnifiedMerklePathView />
+                  </Paper>
+                  <Paper elevation={2} sx={{ p: 3, flex: 1, minWidth: 400 }}>
+                    <TscMerkleProofsView />
+                  </Paper>
                 </Box>
-              </Paper>
-              <Box sx={{ mt: 4, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                <Paper elevation={2} sx={{ p: 3, flex: 1, minWidth: 400 }}>
-                  <BsvUnifiedMerklePathView />
-                </Paper>
-                <Paper elevation={2} sx={{ p: 3, flex: 1, minWidth: 400 }}>
-                  <TscMerkleProofsView />
-                </Paper>
-              </Box>
-            </MerkleProofProvider>
-          </BlockDataProvider>
+              </MerkleProofProvider>
+            </BlockDataProvider>
           </MerkleTreeProvider>
         </ResetProvider>
       </Container>

@@ -11,8 +11,11 @@ import {
   Paper, 
   Box, 
   ThemeProvider, 
-  createTheme 
+  createTheme,
+  Alert
 } from "@mui/material";
+import { BlockDataProvider } from "./BlockDataProvider.tsx";
+import { BlockInput } from "./BlockInput.tsx";
 import CssBaseline from '@mui/material/CssBaseline';
 
 const theme = createTheme({
@@ -54,10 +57,11 @@ function App() {
           </Typography>
         </Paper>
         <ResetProvider>
-          <MerkleTreeProvider>
+          <BlockDataProvider>
             <MerkleProofProvider>
               <Paper elevation={2} sx={{ p: 4, overflow: 'hidden' }}>
-                <MerkleTreeSizeSelector />
+                <BlockInput />
+              <MerkleTreeSizeSelector />
                 <Box sx={{ overflow: 'auto', mt: 2, maxHeight: 600 }}>
                   <MerkleTreeView />
                 </Box>
@@ -71,6 +75,7 @@ function App() {
                 </Paper>
               </Box>
             </MerkleProofProvider>
+          </BlockDataProvider>
           </MerkleTreeProvider>
         </ResetProvider>
       </Container>

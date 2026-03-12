@@ -4,6 +4,7 @@ import {
   createContext,
   useState,
   useContext,
+  useEffect,
 } from "react";
 import { MerkleTree, TreeLeaf, TreePart } from "./merkle-tree-data";
 import { chunk } from "lodash";

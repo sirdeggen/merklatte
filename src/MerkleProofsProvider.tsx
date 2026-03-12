@@ -51,9 +51,10 @@ export const useMerklePath = () => {
     remove: (hash: string) => {
       const merkleProofs = ctx.value;
       delete merkleProofs[hash];
-      ctx.setValue({
-        ...merkleProofs,
-      });
+      ctx.setValue({ ...merkleProofs });
+    },
+    setProof: (proof: MerkleProofByTx) => {
+      ctx.setValue({ ...proof });
     },
   };
 };

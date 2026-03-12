@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from "react";
 
 interface BlockData {
   height: number;
@@ -16,7 +22,9 @@ interface BlockDataContextValue {
   setUseFakeData: (fake: boolean) => void;
 }
 
-const BlockDataContext = createContext<BlockDataContextValue | undefined>(undefined);
+const BlockDataContext = createContext<BlockDataContextValue | undefined>(
+  undefined,
+);
 
 export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
   const [blockData, setBlockData] = useState<BlockData | null>(null);
@@ -32,45 +40,52 @@ export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
         // Fake data for demo
         setBlockData({
           height,
-          hash: '000000000000000000fakehash',
-          txids: Array.from({length: Math.min(32, height % 64 + 8)}, (_, i) => `txid_${i}_${height}`),
-          merkleRoot: 'fakeroot_' + height,
+          hash: "000000000000000000fakehash",
+          txids: Array.from(
+            { length: Math.min(32, (height % 64) + 8) },
+            (_, i) => `txid_${i}_${height}`,
+          ),
+          merkleRoot: "fakeroot_" + height,
         });
         return;
       }
 
       // Real Whatsonchain API (BSV mainnet)
-      const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/block-height/${height}`);
-      if (!res.ok) throw new Error(`Block not found: ${height}`);
-      interface BlockHashResponse {
+      const blockRes = await fetch(
+        `https://api.whatsonchain.com/v1/bsv/main/block/height/${height}`,
+      );
+      if (!blockRes.ok) throw new Error(`Block not found: ${height}`);
+      interface BlockResponse {
+        tx: Array<string>;
+        merkleroot: string;
         hash: string;
       }
-      const blockHashData = await res.json() as BlockHashResponse;
-      const blockHash = blockHashData.hash;
-
-      const blockRes = await fetch(`https://api.whatsonchain.com/v1/bsv/main/block/${blockHash}`);
-      if (!blockRes.ok) throw new Error('Failed to fetch block details');
-      interface BlockResponse {
-        txs: Array<{ txid: string }>;
-        merkleroot: string;
-      }
-      const block = await blockRes.json() as BlockResponse;
+      const block = (await blockRes.json()) as BlockResponse;
 
       setBlockData({
         height,
-        hash: blockHash,
-        txids: block.txs.map((tx: any) => tx.txid),
+        hash: block.hash,
+        txids: block.tx,
         merkleRoot: block.merkleroot,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <BlockDataContext.Provider value={{ blockData, loading, error, fetchBlock, useFakeData, setUseFakeData }}>
+    <BlockDataContext.Provider
+      value={{
+        blockData,
+        loading,
+        error,
+        fetchBlock,
+        useFakeData,
+        setUseFakeData,
+      }}
+    >
       {children}
     </BlockDataContext.Provider>
   );
@@ -78,6 +93,7 @@ export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
 
 export const useBlockData = () => {
   const ctx = useContext(BlockDataContext);
-  if (!ctx) throw new Error('useBlockData must be used within BlockDataProvider');
+  if (!ctx)
+    throw new Error("useBlockData must be used within BlockDataProvider");
   return ctx;
 };

@@ -1,12 +1,19 @@
 import "./MerkleTreeView.css";
-import { FC, PropsWithChildren, useState } from "react";
-import { TreeLeaf, TreeNode, TreePart, MerkleTree, DuplicatedNode, MerkleProofByTx } from "./merkle-tree-data";
+import { FC, PropsWithChildren } from "react";
+import {
+  TreeLeaf,
+  TreeNode,
+  TreePart,
+  MerkleTree,
+  DuplicatedNode,
+  MerkleProofByTx,
+} from "./merkle-tree-data";
 import { useMerkleTree } from "./MerkleTreeProvider.tsx";
-import * as _ from "lodash";
 import { useMerklePath } from "./MerkleProofsProvider.tsx";
 
-// Import optimized BUMP logic to determine which nodes should be highlighted
-interface MerklePathLeaf {
+// --- Proof-based highlight helpers ---
+
+interface ProofLeaf {
   hash: string;
   txid?: boolean;
   duplicate?: boolean;
@@ -14,30 +21,10 @@ interface MerklePathLeaf {
   height: number;
 }
 
-function isRequiredForOptimizedBump(targetPart: TreePart, proof: MerkleProofByTx): boolean {
-  // Convert proof to MerklePathLeaf format for analysis
-  const allPaths = listAllPathsFromProof(proof);
-  
-  const targetPath = allPaths.find(p => 
-    p.height === targetPart.height && 
-    p.offset === targetPart.offset && 
-    p.hash === targetPart.hash
-  );
-  
-  if (!targetPath) return false;
-  
-  return isRequiredForCalculation(targetPath, allPaths);
-}
-
-function listAllPathsFromProof(proof: MerkleProofByTx): MerklePathLeaf[] {
-  return Object.entries(proof).flatMap((it) => [
-    {
-      hash: it[0],
-      txid: true,
-      offset: it[1].index,
-      height: 0,
-    },
-    ...it[1].path.map((p) => ({
+function allProofLeaves(proof: MerkleProofByTx): ProofLeaf[] {
+  return Object.entries(proof).flatMap(([hash, entry]) => [
+    { hash, txid: true, offset: entry.index, height: 0 },
+    ...entry.path.map((p) => ({
       hash: p.hash,
       offset: p.offset,
       height: p.height,
@@ -46,35 +33,39 @@ function listAllPathsFromProof(proof: MerkleProofByTx): MerklePathLeaf[] {
   ]);
 }
 
-function isRequiredForCalculation(targetPath: MerklePathLeaf, allPaths: MerklePathLeaf[]): boolean {
-  // If this is a txid node, it's always required
-  if (targetPath.txid) return true;
-  
-  // If this is a duplicate, it's required
-  if (targetPath.duplicate) return true;
-  
-  // Check if both children exist at the level below
-  const childLevel = targetPath.height - 1;
-  if (childLevel < 0) return true; // Base level
-  
-  const leftChildOffset = targetPath.offset * 2;
-  const rightChildOffset = targetPath.offset * 2 + 1;
-  
-  const leftChild = allPaths.find(p => p.height === childLevel && p.offset === leftChildOffset);
-  const rightChild = allPaths.find(p => p.height === childLevel && p.offset === rightChildOffset);
-  
-  // If both children are present and have hashes, this parent node is calculable (not required)
-  if (leftChild && rightChild && leftChild.hash && rightChild.hash) {
-    return false; // This node can be calculated from its children
-  }
-  
-  // Otherwise, this node is required
-  return true;
+function isInProofPath(part: TreePart, proof: MerkleProofByTx): boolean {
+  return allProofLeaves(proof).some(
+    (p) => p.height === part.height && p.offset === part.offset,
+  );
 }
+
+function isRequiredForBump(part: TreePart, proof: MerkleProofByTx): boolean {
+  const leaves = allProofLeaves(proof);
+  const target = leaves.find(
+    (p) =>
+      p.height === part.height &&
+      p.offset === part.offset &&
+      p.hash === part.hash,
+  );
+  if (!target) return false;
+  if (target.txid || target.duplicate) return true;
+
+  const childLevel = target.height - 1;
+  if (childLevel < 0) return true;
+
+  const left = leaves.find(
+    (p) => p.height === childLevel && p.offset === target.offset * 2,
+  );
+  const right = leaves.find(
+    (p) => p.height === childLevel && p.offset === target.offset * 2 + 1,
+  );
+  return !(left?.hash && right?.hash);
+}
+
+// --- Components ---
 
 export const MerkleTreeView = () => {
   const { tree } = useMerkleTree();
-
   return (
     <figure>
       <ul className="tree">
@@ -84,42 +75,64 @@ export const MerkleTreeView = () => {
   );
 };
 
-interface MerkleRootProps {
-  tree: MerkleTree;
+const MerkleRoot: FC<{ tree: MerkleTree }> = ({ tree }) => (
+  <li title={`Hash: ${tree.hash}\ntree height: ${tree.height - 1}`}>
+    <code>Merkle Root</code>
+    <Branches left={tree.left} right={tree.right} />
+  </li>
+);
+
+function isLeaf(part: TreePart): part is TreeLeaf | DuplicatedNode {
+  return !("left" in part && "right" in part);
 }
-const MerkleRoot: FC<MerkleRootProps> = ({ tree }) => {
+
+const Branches: FC<{
+  left: TreePart;
+  right: TreePart;
+  onSelectionChange?: (selected: boolean, hash: string) => void;
+}> = ({ left, right, onSelectionChange = () => {} }) => {
+  const { add } = useMerklePath();
+
+  const leftHandler = (selected: boolean, hash: string) => {
+    if (selected) add(hash, right);
+    onSelectionChange(selected, hash);
+  };
+
+  const rightHandler = (selected: boolean, hash: string) => {
+    if (selected) add(hash, left);
+    onSelectionChange(selected, hash);
+  };
+
   return (
-    <li
-      title={`Hash: ${tree.hash}
- tree height: ${tree.height - 1}`}
-    >
-      <code>Merkle Root</code>
-      <Branches left={tree.left} right={tree.right} />
-    </li>
+    <ul>
+      {isLeaf(left) ? (
+        <MerkleTreeLeaf part={left} onSelectionChange={leftHandler} />
+      ) : (
+        <MerkleNode part={left} onSelectionChange={leftHandler} />
+      )}
+      {isLeaf(right) ? (
+        <MerkleTreeLeaf part={right} onSelectionChange={rightHandler} />
+      ) : (
+        <MerkleNode part={right} onSelectionChange={rightHandler} />
+      )}
+    </ul>
   );
 };
 
-interface BaseNodeProps {
-  isPartOfMerkleProof?: boolean;
+const MerkleNode: FC<{
+  part: TreeNode;
   onSelectionChange?: (selected: boolean, hash: string) => void;
-}
-
-interface MerkleNodeProps extends BaseNodeProps {
-  part: TreeNode ;
-}
-
-const MerkleNode: FC<MerkleNodeProps> = ({
-  part,
-  isPartOfMerkleProof = false,
-  onSelectionChange = () => {},
-}) => {
+}> = ({ part, onSelectionChange = () => {} }) => {
   const { proof } = useMerklePath();
-  const shouldHighlight = isPartOfMerkleProof && isRequiredForOptimizedBump(part, proof);
-  
+  const inPath = isInProofPath(part, proof);
+  const required = inPath && isRequiredForBump(part, proof);
+
   return (
     <MerkleTreePart
       part={part}
-      className={`${shouldHighlight ? "merkleproof" : ""} ${isPartOfMerkleProof && !shouldHighlight ? "calculable" : ""}`}
+      className={`${required ? "merkleproof" : ""} ${
+        inPath && !required ? "calculable" : ""
+      }`}
     >
       <Branches
         left={part.left}
@@ -130,154 +143,55 @@ const MerkleNode: FC<MerkleNodeProps> = ({
   );
 };
 
-function isLeaf(part: TreePart): part is TreeLeaf | DuplicatedNode {
-  return !("left" in part && "right" in part);
-}
-
-interface BranchesProps {
-  left: TreePart;
-  right: TreePart;
-  onSelectionChange?: (selected: boolean, hash: string) => void;
-}
-
-interface MerkleTreePartState {
-  left: string[];
-  right: string[];
-}
-
-const Branches: FC<BranchesProps> = ({
-  left,
-  right,
-  onSelectionChange = () => {},
-}) => {
-  const [merkleTreePart, setMerkleTreePart] = useState<MerkleTreePartState>({
-    left: [],
-    right: [],
-  });
-  const { add: addToMerkleProofs } = useMerklePath();
-  const leftSelectionHandler = (selected: boolean, hash: string) => {
-    const val = {
-      left: [...merkleTreePart.left],
-      right: [...merkleTreePart.right],
-    };
-    if (selected) {
-      val.right.push(hash);
-      addToMerkleProofs(hash, right);
-    } else {
-      val.right = val.right.filter((it) => it !== hash);
-    }
-    setMerkleTreePart(val);
-    onSelectionChange(selected, hash);
-  };
-
-  const rightSelectionHandler = (selected: boolean, hash: string) => {
-    const val = {
-      left: [...merkleTreePart.left],
-      right: [...merkleTreePart.right],
-    };
-    if (selected) {
-      val.left.push(hash);
-      addToMerkleProofs(hash, left);
-    } else {
-      val.left = val.left.filter((it) => it !== hash);
-    }
-    setMerkleTreePart(val);
-    onSelectionChange(selected, hash);
-  };
-
-  return (
-    <ul>
-      {isLeaf(left) ? (
-        <MerkleTreeLeaf
-          part={left}
-          isPartOfMerkleProof={!_.isEmpty(merkleTreePart.left)}
-          onSelectionChange={leftSelectionHandler}
-        />
-      ) : (
-        <MerkleNode
-          part={left}
-          isPartOfMerkleProof={!_.isEmpty(merkleTreePart.left)}
-          onSelectionChange={leftSelectionHandler}
-        />
-      )}
-      {isLeaf(right) ? (
-        <MerkleTreeLeaf
-          part={right}
-          isPartOfMerkleProof={!_.isEmpty(merkleTreePart.right)}
-          onSelectionChange={rightSelectionHandler}
-        />
-      ) : (
-        <MerkleNode
-          part={right}
-          isPartOfMerkleProof={!_.isEmpty(merkleTreePart.right)}
-          onSelectionChange={rightSelectionHandler}
-        />
-      )}
-    </ul>
-  );
-};
-
-interface MerkleTreeLeafProps extends BaseNodeProps {
+const MerkleTreeLeaf: FC<{
   part: TreeLeaf | DuplicatedNode;
-}
-
-const MerkleTreeLeaf: FC<MerkleTreeLeafProps> = ({
-  part,
-  isPartOfMerkleProof = false,
-  onSelectionChange = () => {},
-}) => {
-  const [selected, setSelected] = useState(false);
+  onSelectionChange?: (selected: boolean, hash: string) => void;
+}> = ({ part, onSelectionChange = () => {} }) => {
   const merkleProof = useMerklePath();
-  const shouldHighlight = isPartOfMerkleProof && isRequiredForOptimizedBump(part, merkleProof.proof);
+  const { proof } = merkleProof;
+  const selected = !part.duplicated && part.hash in proof;
+  const inPath = isInProofPath(part, proof);
+  const required = inPath && isRequiredForBump(part, proof);
 
   const clickHandler = () => {
-    if (part.duplicated) {
-      return;
-    }
-
-    const val = !selected;
-    setSelected(val);
-    if (val) {
-      merkleProof.add(part.hash, part);
-    } else {
+    if (part.duplicated) return;
+    if (selected) {
       merkleProof.remove(part.hash);
+      onSelectionChange(false, part.hash);
+    } else {
+      merkleProof.add(part.hash, part);
+      onSelectionChange(true, part.hash);
     }
-    onSelectionChange(val, part.hash);
   };
 
   return (
     <MerkleTreePart
       part={part}
       onClick={clickHandler}
-      className={`${!part.duplicated && "clickable"} ${
-        selected && "selected"
-      } ${shouldHighlight && "merkleproof"} ${isPartOfMerkleProof && !shouldHighlight ? "calculable" : ""}`}
+      className={`${!part.duplicated ? "clickable" : ""} ${
+        selected ? "selected" : ""
+      } ${required ? "merkleproof" : ""} ${
+        inPath && !required ? "calculable" : ""
+      }`}
     />
   );
 };
 
-interface MerkleTreePartProps {
-  part: TreePart;
-  onClick?: () => void;
-  className?: string;
-}
-
-const MerkleTreePart: FC<PropsWithChildren<MerkleTreePartProps>> = ({
-  part,
-  onClick = () => {},
-  className = "",
-  children,
-}) => {
-  return (
-    <li
-      title={`height: ${part.height} offset: ${part.offset}`}
-      onClick={onClick}
-      className={className}
-    >
-      <code>
-        {part.offset}: {part.duplicated ? "*" : part.hash}
-      </code>
-      {children}
-    </li>
-  );
-};
+const MerkleTreePart: FC<
+  PropsWithChildren<{
+    part: TreePart;
+    onClick?: () => void;
+    className?: string;
+  }>
+> = ({ part, onClick = () => {}, className = "", children }) => (
+  <li
+    title={`${part.hash}\nheight: ${part.height} offset: ${part.offset}`}
+    onClick={onClick}
+    className={className}
+  >
+    <code>
+      {part.offset}: {part.duplicated ? "*" : part.hash.slice(0, 4)}
+    </code>
+    {children}
+  </li>
+);

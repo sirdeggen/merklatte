@@ -5,36 +5,16 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Roboto", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+  background: #0c0c0c;
   min-height: 100vh;
+  color: #e4e4e7;
 }
 
 code {
-  font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
-  background: rgba(255,255,255,0.1);
-  padding: 0.2em 0.4em;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-/* Smooth animations */
-@keyframes glow {
-  0% { box-shadow: 0 0 5px rgba(0,255,136,0.5); }
-  50% { box-shadow: 0 0 20px rgba(0,255,136,0.8); }
-  100% { box-shadow: 0 0 5px rgba(0,255,136,0.5); }
-}
-
-.merkleproof {
-  animation: glow 2s infinite;
-  background: linear-gradient(45deg, #00ff88, #00cc6a);
-  border: 1px solid #00ff88;
-}
-
-.selected {
-  background: linear-gradient(45deg, #ff6b6b, #ee5a52);
-  border-color: #ff4757;
-  animation: glow 1s infinite alternate;
+  font-family: "Fira Code", "Monaco", "Consolas", monospace;
+  font-size: 0.85em;
 }

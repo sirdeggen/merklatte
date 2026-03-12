@@ -2,284 +2,275 @@ import { useMerklePath } from "./MerkleProofsProvider.tsx";
 import _ from "lodash";
 import { NoTransactionSelected } from "./NoTransactionSelected.tsx";
 import "./BsvUnifiedMerklePathView.css";
-import { MerkleProof, MerkleProofByTx, TreePart } from "./merkle-tree-data";
+import { MerkleProofByTx } from "./merkle-tree-data";
 import { displayAsIfItWereA32ByteHash } from "./RenderHashes.tsx";
-// import { MerklePath } from '@bsv/sdk'; // For reference - not used in demo
+import { MerklePath } from "@bsv/sdk";
 
-// Import TSC calculation function
-function mapToTSCFormat(proof: MerkleProofByTx) {
-  return Object.entries(proof)
-    .map((it) => ({
-      index: it[1].index,
-      txOrId: displayAsIfItWereA32ByteHash(it[0]),
-      targetType: "header",
-      target: "000000000000000002bcc1bbe47c4def6a9c1440e9c1b2200fc6a650a0552904",
-      nodes: it[1].path,
-    }))
-    .map((it) => ({ ...it, nodes: it.nodes.map((n) => displayAsIfItWereA32ByteHash(n.hash)) }))
-}
+// --- Types ---
 
-function calculateTheByteLengthOfTSC(proof: MerkleProofByTx) {
-  if (_.isEmpty(proof)) return 0;
-  return Math.ceil(JSON.stringify(mapToTSCFormat(proof)).length / 2);
-}
-
-
-interface MerklePathLeaf {
-  hash: string;
-  txid?: true;
-  duplicate?: boolean;
-  offset: number;
-  height: number;
-}
-
-
-function createOptimizedMerklePath(proof: MerkleProofByTx): { 
-  blockHeight: number; 
-  path: Array<Array<{
-    offset: number;
-    hash?: string;
-    txid?: boolean;
-    duplicate?: boolean;
-  }>>;
-  toBinary: () => number[];
-  toHex: () => string;
-} {
-  // Convert our internal proof format to optimized format
-  const pathParts: MerklePathLeaf[] = listAllPaths(proof);
-  const pathPartsWithoutShared = mergeSharedPaths(pathParts);
-
-  const optimizedPath: Array<Array<{
-    offset: number;
-    hash?: string;
-    txid?: boolean;
-    duplicate?: boolean;
-  }>> = [];
-
-  groupByHeight(pathPartsWithoutShared).forEach(([height, paths]) => {
-    const level = parseInt(height);
-    if (!optimizedPath[level]) optimizedPath[level] = [];
-    
-    paths.forEach((path) => {
-      const leaf: {
-        offset: number;
-        hash?: string;
-        txid?: boolean;
-        duplicate?: boolean;
-      } = { offset: path.offset };
-      
-      if (path.duplicate) {
-        leaf.duplicate = true;
-      } else {
-        // Only include hash for txid leaves and required nodes
-        // Skip hashes that can be calculated from other nodes
-        if (path.txid || isRequiredForCalculation(path, pathPartsWithoutShared)) {
-          leaf.hash = displayAsIfItWereA32ByteHash(path.hash);
-          if (path.txid) {
-            leaf.txid = true;
-          }
-        }
-      }
-      
-      // Only add if it's not empty (has hash, txid, or duplicate flag)
-      if (leaf.hash || leaf.txid || leaf.duplicate) {
-        optimizedPath[level].push(leaf);
-      }
-    });
-  });
-
-  // Remove empty levels
-  const cleanedPath = optimizedPath.filter(level => level && level.length > 0);
-
-  return {
-    blockHeight: 818433,
-    path: cleanedPath,
-    toBinary: () => calculateOptimizedByteLength(cleanedPath),
-    toHex: () => 'optimized-hex-representation'
-  };
-}
-
-function isRequiredForCalculation(targetPath: MerklePathLeaf, allPaths: MerklePathLeaf[]): boolean {
-  // If this is a txid node, it's always required
-  if (targetPath.txid) return true;
-  
-  // If this is a duplicate, it's required
-  if (targetPath.duplicate) return true;
-  
-  // Check if both children exist at the level below
-  const childLevel = targetPath.height - 1;
-  if (childLevel < 0) return true; // Base level
-  
-  const leftChildOffset = targetPath.offset * 2;
-  const rightChildOffset = targetPath.offset * 2 + 1;
-  
-  const leftChild = allPaths.find(p => p.height === childLevel && p.offset === leftChildOffset);
-  const rightChild = allPaths.find(p => p.height === childLevel && p.offset === rightChildOffset);
-  
-  // If both children are present and have hashes, this parent node is calculable (not required)
-  if (leftChild && rightChild && leftChild.hash && rightChild.hash) {
-    return false; // This node can be calculated from its children
-  }
-  
-  // Otherwise, this node is required
-  return true;
-}
-
-function calculateOptimizedByteLength(path: Array<Array<{
+interface PathLeaf {
   offset: number;
   hash?: string;
   txid?: boolean;
   duplicate?: boolean;
-}>>): number[] {
-  let totalBytes = 4; // block height
-  totalBytes += 1; // tree height
-  
-  path.forEach((level) => {
-    totalBytes += 1; // number of leaves at this level
-    level.forEach((leaf) => {
-      totalBytes += 1; // offset
-      totalBytes += 1; // flags
-      if (!leaf.duplicate) {
-        totalBytes += 32; // hash length
-      }
-    });
-  });
-  
-  // Return array representing bytes (simplified)
-  return new Array(totalBytes).fill(0);
 }
 
+type BumpPath = PathLeaf[][];
 
-const renderOptimizedBump = (optimizedBump: { blockHeight: number; path: Array<Array<any>> }) => {
-  let output = "{\n  \"blockHeight\": " + optimizedBump.blockHeight + ",\n  \"path\": [\n";
-  optimizedBump.path?.map((level: any[], index: number) => {
-    output += "    [";
-    level?.map((leaf: any, leafIndex: number) => {
-      output += JSON.stringify(leaf);
-      if (leafIndex < level.length - 1) {
-        output += ",\n     ";
-      }
-    });
-    output += "]";
-    if (index < optimizedBump.path.length - 1) {
-      output += ",\n";
+// --- Build SDK MerklePath for a single txid ---
+// (works because single-txid paths don't trigger the root comparison)
+
+function buildIndividualMerklePath(
+  txHash: string,
+  proof: MerkleProofByTx,
+): MerklePath {
+  const entry = proof[txHash];
+  const path: BumpPath = [];
+
+  path[0] = [{
+    offset: entry.index,
+    hash: displayAsIfItWereA32ByteHash(txHash),
+    txid: true,
+  }];
+
+  for (const node of entry.path) {
+    if (!path[node.height]) path[node.height] = [];
+    if (node.duplicated) {
+      path[node.height].push({ offset: node.offset, duplicate: true });
     } else {
-      output += "\n  ]\n}";
+      path[node.height].push({
+        offset: node.offset,
+        hash: displayAsIfItWereA32ByteHash(node.hash),
+      });
     }
-  });
-  return output;
-};
+  }
+
+  return new MerklePath(0, path);
+}
+
+// --- Build compound path manually (merge + trim) ---
+// We can't use MerklePath.combine() because it validates roots via SHA256,
+// which our demo hashes (fake concatenations) can't satisfy.
+
+function buildCompoundPath(proof: MerkleProofByTx): BumpPath {
+  // Collect all leaves from all individual paths
+  const allLeaves = new Map<string, PathLeaf>(); // key: "height_offset"
+
+  for (const [txHash, entry] of Object.entries(proof)) {
+    const key0 = `0_${entry.index}`;
+    allLeaves.set(key0, {
+      offset: entry.index,
+      hash: displayAsIfItWereA32ByteHash(txHash),
+      txid: true,
+    });
+
+    for (const node of entry.path) {
+      const key = `${node.height}_${node.offset}`;
+      if (!allLeaves.has(key)) {
+        allLeaves.set(key, {
+          offset: node.offset,
+          ...(node.duplicated
+            ? { duplicate: true }
+            : { hash: displayAsIfItWereA32ByteHash(node.hash) }),
+        });
+      }
+    }
+  }
+
+  // Group by height
+  const byHeight = new Map<number, PathLeaf[]>();
+  for (const [key, leaf] of allLeaves) {
+    const height = parseInt(key.split("_")[0]);
+    if (!byHeight.has(height)) byHeight.set(height, []);
+    byHeight.get(height)!.push(leaf);
+  }
+
+  // Trim: remove non-txid, non-duplicate nodes whose both children are present
+  const txidOffsets = new Set(
+    Object.values(proof).map((e) => `0_${e.index}`)
+  );
+
+  for (const [height, leaves] of byHeight) {
+    if (height === 0) continue;
+    const below = byHeight.get(height - 1);
+    if (!below) continue;
+    const belowOffsets = new Set(below.map((l) => l.offset));
+
+    byHeight.set(
+      height,
+      leaves.filter((leaf) => {
+        if (leaf.duplicate) return true;
+        if (txidOffsets.has(`${height}_${leaf.offset}`)) return true;
+        const leftChild = leaf.offset * 2;
+        const rightChild = leaf.offset * 2 + 1;
+        const bothChildrenPresent =
+          belowOffsets.has(leftChild) && belowOffsets.has(rightChild);
+        return !bothChildrenPresent;
+      }),
+    );
+  }
+
+  // Build sparse array indexed by height, levels sorted by offset
+  const maxHeight = Math.max(...byHeight.keys());
+  const path: BumpPath = [];
+  for (let h = 0; h <= maxHeight; h++) {
+    const leaves = byHeight.get(h) ?? [];
+    path[h] = leaves.sort((a, b) => a.offset - b.offset);
+  }
+
+  return path.filter((l) => l && l.length > 0);
+}
+
+// --- Serialize a BumpPath to hex, matching the exact @bsv/sdk toWriter format ---
+// Format: varint(blockHeight) | uint8(treeHeight) |
+//   [varint(nLeaves) | [varint(offset) | uint8(flags) | bytes32(hash, reversed)]*]*
+
+function writeVarInt(n: number): number[] {
+  if (n < 0xfd) return [n];
+  if (n <= 0xffff) return [0xfd, n & 0xff, (n >> 8) & 0xff];
+  return [0xfe, n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff];
+}
+
+function hexToBytes(hex: string): number[] {
+  const bytes: number[] = [];
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes.push(parseInt(hex.slice(i, i + 2), 16));
+  }
+  return bytes;
+}
+
+function bumpPathToHex(path: BumpPath, blockHeight = 0): string {
+  const bytes: number[] = [];
+
+  bytes.push(...writeVarInt(blockHeight));
+  bytes.push(path.length); // treeHeight as uint8
+
+  for (const level of path) {
+    bytes.push(...writeVarInt(level.length));
+    for (const leaf of level) {
+      bytes.push(...writeVarInt(leaf.offset));
+      let flags = 0;
+      if (leaf.duplicate) flags |= 1;
+      if (leaf.txid !== undefined && leaf.txid !== null) flags |= 2;
+      bytes.push(flags);
+      if (!leaf.duplicate) {
+        // hash written as reversed bytes, exactly like SDK toWriter
+        const hashBytes = hexToBytes(leaf.hash ?? "00".repeat(32));
+        bytes.push(...[...hashBytes].reverse());
+      }
+    }
+  }
+
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// --- Component ---
 
 export const BsvUnifiedMerklePathView = () => {
   const { proof } = useMerklePath();
 
   if (_.isEmpty(proof)) {
     return (
-      <article className="bump-view">
-        <header>BUMP Format (Optimized)</header>
-        <NoTransactionSelected />
-      </article>
+      <div className="bump-comparison">
+        <div className="bump-comparison__empty">
+          <NoTransactionSelected />
+        </div>
+      </div>
     );
   }
 
-  try {
-    // Create optimized MerklePath using @bsv/sdk
-    const bsvMerklePath = createOptimizedMerklePath(proof);
-    const optimizedSizeBytes = bsvMerklePath.toBinary().length;
-    const tscSizeBytes = calculateTheByteLengthOfTSC(proof);
-    const savingsVsTsc = tscSizeBytes - optimizedSizeBytes;
-    const percentageSavings = tscSizeBytes > 0 ? Math.round((savingsVsTsc / tscSizeBytes) * 100) : 0;
+  const txHashes = Object.keys(proof);
 
-    return (
-      <article className="bump-view">
-        <header>
-          BUMP Format: {optimizedSizeBytes} bytes vs TSC Format: {tscSizeBytes} bytes
-          <br />
-          <span style={{ color: 'green', fontWeight: 'bold' }}>
-            Savings vs TSC: {savingsVsTsc} bytes ({percentageSavings}% reduction)
+  // Individual BUMPs via SDK (single-txid paths are valid)
+  const individualItems = txHashes.map((hash) => {
+    const mp = buildIndividualMerklePath(hash, proof);
+    return { hash, hex: mp.toHex(), bytes: mp.toBinary().length };
+  });
+  const individualTotalBytes = individualItems.reduce(
+    (sum, { bytes }) => sum + bytes,
+    0,
+  );
+
+  // Compound BUMP via manual merge + our serializer (matches SDK format)
+  const compoundPath = buildCompoundPath(proof);
+  const compoundHex = bumpPathToHex(compoundPath);
+  const compoundBytes = compoundHex.length / 2;
+
+  const savings = individualTotalBytes - compoundBytes;
+  const pct =
+    individualTotalBytes > 0
+      ? Math.round((savings / individualTotalBytes) * 100)
+      : 0;
+
+  return (
+    <div className="bump-comparison">
+      <div className="bump-comparison__stats">
+        <div className="bump-stat">
+          <span className="bump-stat__label">Individual BUMPs</span>
+          <span className="bump-stat__value bump-stat__value--individual">
+            {individualTotalBytes} bytes
           </span>
-          <br />
-          <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}>
-            Note: This demo uses concatenation (AAAA+BBBB=ABAB) instead of real hashing to visualize the optimization concept
+          <span className="bump-stat__detail">
+            {txHashes.length} proof{txHashes.length !== 1 ? "s" : ""} &times;
+            avg {Math.round(individualTotalBytes / txHashes.length)} B
           </span>
-        </header>
-        <div>
-          <h3>Optimized BUMP (Compact - Calculable Hashes Omitted)</h3>
-          <pre style={{ fontSize: '12px', background: '#f0f8ff' }}>
-            {renderOptimizedBump({ 
-              blockHeight: bsvMerklePath.blockHeight, 
-              path: bsvMerklePath.path 
-            })}
-          </pre>
-          <p style={{ fontSize: '12px', color: '#666' }}>
-            Binary length: {bsvMerklePath.toBinary().length} bytes
-          </p>
-          <div style={{ fontSize: '11px', color: '#555', marginTop: '10px', padding: '8px', background: '#e8f4fd', borderRadius: '4px' }}>
-            <strong>Optimizations shown:</strong>
-            <ul style={{ margin: '4px 0', paddingLeft: '16px' }}>
-              <li><strong>Calculable nodes omitted:</strong> If both children AAAA and BBBB exist, parent ABAB can be omitted</li>
-              <li><strong>Essential nodes kept:</strong> TXIDs and nodes needed for proof verification</li>
-              <li><strong>Space savings:</strong> Reduced binary size while maintaining proof integrity</li>
-            </ul>
-            <div style={{ marginTop: '6px', fontSize: '10px', fontStyle: 'italic' }}>
-              Example: AAAA + BBBB → ABAB (calculable, so ABAB hash not stored)
-            </div>
+        </div>
+        <div className="bump-stat">
+          <span className="bump-stat__label">Compound BUMP</span>
+          <span className="bump-stat__value bump-stat__value--compound">
+            {compoundBytes} bytes
+          </span>
+          <span className="bump-stat__detail">single proof, all txids</span>
+        </div>
+        {savings > 0 && (
+          <div className="bump-stat bump-stat--savings">
+            <span className="bump-stat__label">Savings</span>
+            <span className="bump-stat__value bump-stat__value--savings">
+              {savings} bytes ({pct}%)
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="bump-comparison__panels">
+        <div className="bump-panel">
+          <h3 className="bump-panel__title">
+            Individual BUMPs
+            <span className="bump-panel__subtitle">
+              One proof per transaction
+            </span>
+          </h3>
+          <div className="bump-panel__scroll">
+            {individualItems.map(({ hash, hex, bytes }) => (
+              <div key={hash} className="bump-panel__block">
+                <div className="bump-panel__block-label">
+                  tx: {displayAsIfItWereA32ByteHash(hash).slice(0, 16)}...
+                  <span className="bump-panel__block-size">{bytes} B</span>
+                </div>
+                <pre className="bump-panel__code">{hex}</pre>
+              </div>
+            ))}
           </div>
         </div>
-      </article>
-    );
-  } catch (error) {
-    return (
-      <article className="bump-view">
-        <header>BUMP Format (Error occurred during optimization)</header>
-        <div>
-          <h3>Optimized BUMP (Error)</h3>
-          <div style={{ padding: '10px', background: '#ffe6e6', borderRadius: '4px' }}>
-            <p style={{ color: 'red', margin: '0', fontSize: '14px' }}>
-              Error creating optimized MerklePath: {error instanceof Error ? error.message : 'Unknown error'}
-            </p>
-            <p style={{ fontSize: '12px', color: '#666', margin: '10px 0 0 0' }}>
-              This demo tree may not have consistent Merkle roots required for @bsv/sdk validation.
-            </p>
+
+        <div className="bump-panel bump-panel--compound">
+          <h3 className="bump-panel__title">
+            Compound BUMP
+            <span className="bump-panel__subtitle">
+              All transactions in one proof
+            </span>
+          </h3>
+          <div className="bump-panel__scroll">
+            <pre className="bump-panel__code">{compoundHex}</pre>
           </div>
         </div>
-      </article>
-    );
-  }
+      </div>
+
+      <p className="bump-comparison__note">
+        Compound BUMPs eliminate duplicate intermediate hashes shared between
+        individual proofs, reducing total proof size while preserving full
+        verification capability.
+      </p>
+    </div>
+  );
 };
-
-function listAllPaths(proof: MerkleProofByTx) {
-  return Object.entries(proof).flatMap((it) => [
-    toLeaf(it),
-    ...toLeafs(it[1].path),
-  ]);
-}
-
-function mergeSharedPaths(paths: MerklePathLeaf[]) {
-  return _(paths)
-    .groupBy((path) => `${path.height}_${path.offset}`)
-    .map((it) => _.merge({} as MerklePathLeaf, ...it) as MerklePathLeaf)
-    .value();
-}
-
-function groupByHeight(pathPartsWithoutShared: MerklePathLeaf[]) {
-  return _(pathPartsWithoutShared).groupBy("height").entries();
-}
-
-function toLeafs(path: TreePart[]): MerklePathLeaf[] {
-  return path.map((p) => ({
-    hash: p.hash,
-    offset: p.offset,
-    height: p.height,
-    duplicate: p.duplicated,
-  }));
-}
-
-function toLeaf(it: [string, MerkleProof]): MerklePathLeaf {
-  return {
-    hash: it[0],
-    txid: true,
-    offset: it[1].index,
-    height: 0,
-  };
-}

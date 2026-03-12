@@ -1,33 +1,27 @@
 import { MerkleTreeView } from "./MerkleTreeView.tsx";
 import { MerkleTreeProvider } from "./MerkleTreeProvider.tsx";
-import { MerkleTreeSizeSelector } from "./MerkleTreeSizeSelector.tsx";
 import { MerkleProofProvider } from "./MerkleProofsProvider.tsx";
 import { ResetProvider } from "./useReset.tsx";
-import { TscMerkleProofsView } from "./TscMerkleProofsView.tsx";
 import { BsvUnifiedMerklePathView } from "./BsvUnifiedMerklePathView.tsx";
-import { 
-  Container, 
-  Typography, 
-  Paper, 
-  Box, 
-  ThemeProvider, 
+import {
+  Container,
+  Typography,
+  Paper,
+  Box,
+  ThemeProvider,
   createTheme,
-  Alert
 } from "@mui/material";
-import CssBaseline from '@mui/material/CssBaseline';
+import CssBaseline from "@mui/material/CssBaseline";
 import { BlockDataProvider } from "./BlockDataProvider.tsx";
 import { BlockInput } from "./BlockInput.tsx";
 
 const theme = createTheme({
   palette: {
-    mode: 'dark',
-    primary: {
-      main: '#00ff88',
-    },
-    background: {
-      default: '#0a0a0a',
-      paper: '#1a1a1a',
-    },
+    mode: "dark",
+    primary: { main: "#6ee7b7" },
+    secondary: { main: "#f472b6" },
+    background: { default: "#0c0c0c", paper: "#161616" },
+    text: { primary: "#e4e4e7", secondary: "#a1a1aa" },
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
@@ -35,9 +29,7 @@ const theme = createTheme({
   components: {
     MuiPaper: {
       styleOverrides: {
-        root: {
-          borderRadius: 16,
-        },
+        root: { borderRadius: 12, border: "1px solid #27272a" },
       },
     },
   },
@@ -47,39 +39,62 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Container maxWidth="lg" sx={{ py: 4, minHeight: '100vh' }}>
-        <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
-          <Typography variant="h2" component="h1" gutterBottom align="center" sx={{ color: 'primary.main', mb: 4 }}>
-            BSV Merkle Path Visualizer
-          </Typography>
-          <Typography variant="h5" align="center" sx={{ mb: 4, opacity: 0.8 }}>
-            Visualize BUMP and Merkle Proofs with stunning interactive trees
-          </Typography>
-        </Paper>
+
+      {/* Fixed top bar */}
+      <Box
+        sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1200,
+          bgcolor: "#111113",
+          borderBottom: "1px solid #27272a",
+          px: 3,
+          py: 1.25,
+          display: "flex",
+          alignItems: "center",
+          gap: 3,
+        }}
+      >
+        <Typography
+          variant="subtitle1"
+          sx={{ fontWeight: 700, color: "#e4e4e7", whiteSpace: "nowrap", mr: 1 }}
+        >
+          Merkle Path Visualizer
+        </Typography>
         <ResetProvider>
-          <MerkleTreeProvider>
-            <BlockDataProvider>
+          <BlockDataProvider>
+            <MerkleTreeProvider>
               <MerkleProofProvider>
-                <Paper elevation={2} sx={{ p: 4, overflow: 'hidden' }}>
-                  <BlockInput />
-                  <MerkleTreeSizeSelector />
-                  <Box sx={{ overflow: 'auto', mt: 2, maxHeight: 600 }}>
+                <BlockInput />
+
+                {/* Page body rendered via a portal-like trick — kept inside providers */}
+                <Box
+                  sx={{
+                    position: "fixed",
+                    top: "56px",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    overflow: "auto",
+                    px: { xs: 2, md: 4 },
+                    py: 3,
+                  }}
+                >
+                  <Paper
+                    elevation={0}
+                    sx={{ p: 3, mb: 3, overflow: "auto", maxHeight: 520 }}
+                  >
                     <MerkleTreeView />
-                  </Box>
-                </Paper>
-                <Box sx={{ mt: 4, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  <Paper elevation={2} sx={{ p: 3, flex: 1, minWidth: 400 }}>
-                    <BsvUnifiedMerklePathView />
                   </Paper>
-                  <Paper elevation={2} sx={{ p: 3, flex: 1, minWidth: 400 }}>
-                    <TscMerkleProofsView />
-                  </Paper>
+                  <BsvUnifiedMerklePathView />
                 </Box>
               </MerkleProofProvider>
-            </BlockDataProvider>
-          </MerkleTreeProvider>
+            </MerkleTreeProvider>
+          </BlockDataProvider>
         </ResetProvider>
-      </Container>
+      </Box>
     </ThemeProvider>
   );
 }

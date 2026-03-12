@@ -1,11 +1,10 @@
-# Showcase Merkle Paths
+# Merklatte - Merkle Path Visualizer
 
-A simple frontend application to visualise BSV Unified Merkle Paths (BUMP) and other Merkle Paths formats
-for selected transactions on an example Merkle tree.
+A simple frontend application to visualise BSV Unified Merkle Paths (BUMP) in both individual and compound configurations.
 
-![select_tx.gif](docs/img/select_tx.gif)
+<img width="1738" height="1283" alt="image" src="https://github.com/user-attachments/assets/e7363f02-5091-4702-9b69-f5b9f8db3b75" />
 
 ## Page
 
 You can see this application there:
-https://bitcoin-sv.github.io/showcase-merkle-paths/
+https://sirdeggen.github.io/merklatte/

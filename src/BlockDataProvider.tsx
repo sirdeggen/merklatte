@@ -42,12 +42,19 @@ export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
       // Real Whatsonchain API (BSV mainnet)
       const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/block-height/${height}`);
       if (!res.ok) throw new Error(`Block not found: ${height}`);
-      const blockHashData = await res.json();
+      interface BlockHashResponse {
+        hash: string;
+      }
+      const blockHashData = await res.json() as BlockHashResponse;
       const blockHash = blockHashData.hash;
 
       const blockRes = await fetch(`https://api.whatsonchain.com/v1/bsv/main/block/${blockHash}`);
       if (!blockRes.ok) throw new Error('Failed to fetch block details');
-      const block = await blockRes.json();
+      interface BlockResponse {
+        txs: Array<{ txid: string }>;
+        merkleroot: string;
+      }
+      const block = await blockRes.json() as BlockResponse;
 
       setBlockData({
         height,

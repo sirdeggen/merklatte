@@ -23,7 +23,6 @@ import { useBlockData } from './BlockDataProvider.tsx';
 
 export const MerkleTreeProvider: FC<PropsWithChildren> = ({ children }) => {
   const { blockData } = useBlockData();
-  const { blockData } = useBlockData();
   const [tree, setTree] = useState<MerkleTree>(createTreeOfSize(2));
 
   useEffect(() => {

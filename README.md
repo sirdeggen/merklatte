@@ -7,4 +7,4 @@ A simple frontend application to visualise BSV Unified Merkle Paths (BUMP) in bo
 ## Page
 
 You can see this application there:
-https://bsv-blockchain-demos.github.io/merklatte/
+https://sirdeggen.github.io/merklatte/

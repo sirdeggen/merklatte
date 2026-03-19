@@ -5,6 +5,7 @@ import "./BsvUnifiedMerklePathView.css";
 import { MerkleProofByTx } from "./merkle-tree-data";
 import { displayAsIfItWereA32ByteHash } from "./RenderHashes.tsx";
 import { MerklePath } from "@bsv/sdk";
+import { useBlockData } from "./BlockDataProvider.tsx";
 
 // --- Types ---
 
@@ -23,29 +24,57 @@ type BumpPath = PathLeaf[][];
 function buildIndividualMerklePath(
   txHash: string,
   proof: MerkleProofByTx,
+  blockHeight: number,
 ): MerklePath {
   const entry = proof[txHash];
-  const path: BumpPath = [];
-
-  path[0] = [{
+  
+  // Group nodes by height
+  const byHeight = new Map<number, PathLeaf[]>();
+  
+  // Add txid at height 0
+  byHeight.set(0, [{
     offset: entry.index,
     hash: displayAsIfItWereA32ByteHash(txHash),
     txid: true,
-  }];
+  }]);
 
+  // Add path nodes
   for (const node of entry.path) {
-    if (!path[node.height]) path[node.height] = [];
+    if (!byHeight.has(node.height)) byHeight.set(node.height, []);
     if (node.duplicated) {
-      path[node.height].push({ offset: node.offset, duplicate: true });
-    } else {
-      path[node.height].push({
+      byHeight.get(node.height)!.push({ offset: node.offset, duplicate: true });
+    } else if (node.hash && node.hash.length > 0) {
+      byHeight.get(node.height)!.push({
         offset: node.offset,
         hash: displayAsIfItWereA32ByteHash(node.hash),
       });
     }
   }
 
-  return new MerklePath(0, path);
+  // Build sparse array indexed by actual tree height
+  // Empty levels are valid when intermediate nodes are calculable
+  // Exclude the root level - path should stop at treeHeight-1
+  const maxHeight = Math.max(...byHeight.keys());
+  
+  // Remove root level if it exists (nodes at maxHeight with offset 0)
+  // The root is calculable and shouldn't be in the path
+  if (byHeight.has(maxHeight)) {
+    const rootLevel = byHeight.get(maxHeight)!;
+    if (rootLevel.length === 1 && rootLevel[0].offset === 0) {
+      byHeight.delete(maxHeight);
+    }
+  }
+  
+  const finalMaxHeight = Math.max(...byHeight.keys());
+  const path: BumpPath = [];
+  for (let h = 0; h <= finalMaxHeight; h++) {
+    const leaves = byHeight.get(h) ?? [];
+    // Sort leaves by offset
+    leaves.sort((a, b) => a.offset - b.offset);
+    path[h] = leaves;
+  }
+
+  return new MerklePath(blockHeight, path);
 }
 
 // --- Build compound path manually (merge + trim) ---
@@ -67,12 +96,17 @@ function buildCompoundPath(proof: MerkleProofByTx): BumpPath {
     for (const node of entry.path) {
       const key = `${node.height}_${node.offset}`;
       if (!allLeaves.has(key)) {
-        allLeaves.set(key, {
-          offset: node.offset,
-          ...(node.duplicated
-            ? { duplicate: true }
-            : { hash: displayAsIfItWereA32ByteHash(node.hash) }),
-        });
+        if (node.duplicated) {
+          allLeaves.set(key, {
+            offset: node.offset,
+            duplicate: true,
+          });
+        } else if (node.hash && node.hash.length > 0) {
+          allLeaves.set(key, {
+            offset: node.offset,
+            hash: displayAsIfItWereA32ByteHash(node.hash),
+          });
+        }
       }
     }
   }
@@ -110,64 +144,44 @@ function buildCompoundPath(proof: MerkleProofByTx): BumpPath {
     );
   }
 
-  // Build sparse array indexed by height, levels sorted by offset
+  // Build sparse array indexed by actual tree height
+  // Empty levels are valid when intermediate nodes are calculable
+  // Exclude the root level - path should stop at treeHeight-1
   const maxHeight = Math.max(...byHeight.keys());
-  const path: BumpPath = [];
-  for (let h = 0; h <= maxHeight; h++) {
-    const leaves = byHeight.get(h) ?? [];
-    path[h] = leaves.sort((a, b) => a.offset - b.offset);
-  }
-
-  return path.filter((l) => l && l.length > 0);
-}
-
-// --- Serialize a BumpPath to hex, matching the exact @bsv/sdk toWriter format ---
-// Format: varint(blockHeight) | uint8(treeHeight) |
-//   [varint(nLeaves) | [varint(offset) | uint8(flags) | bytes32(hash, reversed)]*]*
-
-function writeVarInt(n: number): number[] {
-  if (n < 0xfd) return [n];
-  if (n <= 0xffff) return [0xfd, n & 0xff, (n >> 8) & 0xff];
-  return [0xfe, n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff];
-}
-
-function hexToBytes(hex: string): number[] {
-  const bytes: number[] = [];
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes.push(parseInt(hex.slice(i, i + 2), 16));
-  }
-  return bytes;
-}
-
-function bumpPathToHex(path: BumpPath, blockHeight = 0): string {
-  const bytes: number[] = [];
-
-  bytes.push(...writeVarInt(blockHeight));
-  bytes.push(path.length); // treeHeight as uint8
-
-  for (const level of path) {
-    bytes.push(...writeVarInt(level.length));
-    for (const leaf of level) {
-      bytes.push(...writeVarInt(leaf.offset));
-      let flags = 0;
-      if (leaf.duplicate) flags |= 1;
-      if (leaf.txid !== undefined && leaf.txid !== null) flags |= 2;
-      bytes.push(flags);
-      if (!leaf.duplicate) {
-        // hash written as reversed bytes, exactly like SDK toWriter
-        const hashBytes = hexToBytes(leaf.hash ?? "00".repeat(32));
-        bytes.push(...[...hashBytes].reverse());
-      }
+  
+  // Remove root level if it exists (nodes at maxHeight with offset 0)
+  // The root is calculable and shouldn't be in the path
+  if (byHeight.has(maxHeight)) {
+    const rootLevel = byHeight.get(maxHeight)!;
+    if (rootLevel.length === 1 && rootLevel[0].offset === 0) {
+      byHeight.delete(maxHeight);
     }
   }
+  
+  const finalMaxHeight = Math.max(...byHeight.keys());
+  const path: BumpPath = [];
+  for (let h = 0; h <= finalMaxHeight; h++) {
+    const leaves = byHeight.get(h) ?? [];
+    // Sort leaves by offset
+    leaves.sort((a, b) => a.offset - b.offset);
+    path[h] = leaves;
+  }
 
-  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+  return path;
+}
+
+// --- Build compound MerklePath using SDK ---
+
+function buildCompoundMerklePath(path: BumpPath, blockHeight = 0): MerklePath {
+  return new MerklePath(blockHeight, path);
 }
 
 // --- Component ---
 
 export const BsvUnifiedMerklePathView = () => {
   const { proof } = useMerklePath();
+  const { blockData } = useBlockData();
+  const blockHeight = blockData?.height ?? 0;
 
   if (_.isEmpty(proof)) {
     return (
@@ -183,7 +197,7 @@ export const BsvUnifiedMerklePathView = () => {
 
   // Individual BUMPs via SDK (single-txid paths are valid)
   const individualItems = txHashes.map((hash) => {
-    const mp = buildIndividualMerklePath(hash, proof);
+    const mp = buildIndividualMerklePath(hash, proof, blockHeight);
     return { hash, hex: mp.toHex(), bytes: mp.toBinary().length };
   });
   const individualTotalBytes = individualItems.reduce(
@@ -191,9 +205,10 @@ export const BsvUnifiedMerklePathView = () => {
     0,
   );
 
-  // Compound BUMP via manual merge + our serializer (matches SDK format)
+  // Compound BUMP via SDK MerklePath.toHex()
   const compoundPath = buildCompoundPath(proof);
-  const compoundHex = bumpPathToHex(compoundPath);
+  const compoundMerklePath = buildCompoundMerklePath(compoundPath, blockHeight);
+  const compoundHex = compoundMerklePath.toHex();
   const compoundBytes = compoundHex.length / 2;
 
   const savings = individualTotalBytes - compoundBytes;

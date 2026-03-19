@@ -11,7 +11,7 @@
     "style": "yarn prettier . --write"
   },
   "dependencies": {
-    "@bsv/sdk": "^2.0.5",
+    "@bsv/sdk": "^2.0.12",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@mui/material": "^5.14.17",

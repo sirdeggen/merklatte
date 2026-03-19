@@ -6,45 +6,15 @@ import { displayAsIfItWereA32ByteHash } from "./RenderHashes.tsx";
 import { MerklePath } from "@bsv/sdk";
 import { useBlockData } from "./BlockDataProvider.tsx";
 
-type Leaf = { offset: number; hash?: string; txid?: boolean; duplicate?: boolean };
-
 // Build a single-level compound MerklePath containing every txid in the block.
-// The SDK can compute any intermediate node on demand via findOrComputeLeaf.
+// MerklePath.extract() can then derive any sub-proof from this via findOrComputeLeaf.
 function buildFullBlockPath(txids: string[], blockHeight: number): MerklePath {
-  const level0: Leaf[] = txids.map((txid, idx) => ({ offset: idx, hash: txid, txid: true }));
+  const level0 = txids.map((txid, idx) => ({ offset: idx, hash: txid, txid: true }));
   if (level0.length % 2 === 1) {
-    level0.push({ offset: level0.length, duplicate: true });
+    (level0 as Array<{ offset: number; hash?: string; txid?: boolean; duplicate?: boolean }>)
+      .push({ offset: level0.length, duplicate: true });
   }
   return new MerklePath(blockHeight, [level0]);
-}
-
-// Extract a minimal multi-level individual BUMP for one txid.
-// Mirrors the splitProof pattern from the SDK tests:
-// at each level h, find the sibling offset = (txOffset >> h) ^ 1 via findOrComputeLeaf.
-function extractIndividualPath(
-  source: MerklePath,
-  txOffset: number,
-  txHash: string,
-): MerklePath {
-  const maxOffset = source.path[0].reduce((max, l) => Math.max(max, l.offset), 0);
-  const treeHeight = 32 - Math.clz32(maxOffset);
-  const levels: Leaf[][] = [];
-
-  for (let h = 0; h < treeHeight; h++) {
-    const sibOffset = (txOffset >> h) ^ 1;
-    if (h === 0) {
-      const sib = source.findOrComputeLeaf(0, sibOffset);
-      const level: Leaf[] = [{ offset: txOffset, txid: true, hash: txHash }];
-      if (sib != null) level.push(sib);
-      level.sort((a, b) => a.offset - b.offset);
-      levels.push(level);
-    } else {
-      const sib = source.findOrComputeLeaf(h, sibOffset);
-      levels.push(sib != null ? [sib] : []);
-    }
-  }
-
-  return new MerklePath(source.blockHeight, levels);
 }
 
 // --- Component ---
@@ -69,12 +39,11 @@ export const BsvUnifiedMerklePathView = () => {
   // Single-level full block path — all txids; SDK computes intermediate nodes on demand
   const fullBlockPath = buildFullBlockPath(blockData.txids, blockHeight);
 
-  // Individual BUMPs: extract a proper multi-level proof for each selected txid
-  const individualItems = txHashes.map((hash) => {
-    const txIndex = blockData.txids.indexOf(hash);
-    if (txIndex === -1) return { hash, hex: '', bytes: 0 };
+  // Individual BUMPs: use MerklePath.extract() to get a minimal proof per txid
+  const knownHashes = txHashes.filter((h) => blockData.txids.includes(h));
+  const individualItems = knownHashes.map((hash) => {
     try {
-      const mp = extractIndividualPath(fullBlockPath, txIndex, hash);
+      const mp = fullBlockPath.extract([hash]);
       return { hash, hex: mp.toHex(), bytes: mp.toBinary().length };
     } catch {
       return { hash, hex: '(error)', bytes: 0 };
@@ -82,25 +51,13 @@ export const BsvUnifiedMerklePathView = () => {
   });
   const individualTotalBytes = individualItems.reduce((sum, { bytes }) => sum + bytes, 0);
 
-  // Compound BUMP: combine individual paths; combine() merges and trims automatically
+  // Compound BUMP: single extract() call for all selected txids
   let compoundHex = '';
   let compoundBytes = 0;
   try {
-    let compound: MerklePath | null = null;
-    for (const hash of txHashes) {
-      const txIndex = blockData.txids.indexOf(hash);
-      if (txIndex === -1) continue;
-      const mp = extractIndividualPath(fullBlockPath, txIndex, hash);
-      if (compound === null) {
-        compound = new MerklePath(mp.blockHeight, mp.path.map((l) => [...l]));
-      } else {
-        compound.combine(mp);
-      }
-    }
-    if (compound !== null) {
-      compoundHex = compound.toHex();
-      compoundBytes = compound.toBinary().length;
-    }
+    const compound = fullBlockPath.extract(knownHashes);
+    compoundHex = compound.toHex();
+    compoundBytes = compound.toBinary().length;
   } catch (e) {
     compoundHex = `(error: ${e instanceof Error ? e.message : String(e)})`;
   }

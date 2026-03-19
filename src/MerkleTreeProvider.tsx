@@ -28,7 +28,7 @@ export const MerkleTreeProvider: FC<PropsWithChildren> = ({ children }) => {
 
   useEffect(() => {
     if (blockData?.txids) {
-      const leafs = blockData.txids.slice(0, 64).map( // Limit to 64 for perf
+      const leafs = blockData.txids.map(
         (txid, offset) => ({
           hash: txid,
           offset,

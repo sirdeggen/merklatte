@@ -2,10 +2,12 @@ import { useState } from "react";
 import { TextField, Button, Box, CircularProgress, Alert } from "@mui/material";
 import { useBlockData } from "./BlockDataProvider";
 import { RandomTxSelector } from "./RandomTxSelector.tsx";
+import { useMerklePath } from "./MerkleProofsProvider.tsx";
 
 export const BlockInput = () => {
   const [heightInput, setHeightInput] = useState("865000");
   const { fetchBlock, loading, error } = useBlockData();
+  const { partitionCount, setPartitionCount } = useMerklePath();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +37,22 @@ export const BlockInput = () => {
         >
           {loading ? <CircularProgress size={18} /> : "Load Block"}
         </Button>
-        <RandomTxSelector />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <TextField
+            label="Businesses"
+            type="number"
+            value={partitionCount}
+            onChange={(e) => {
+              const v = Math.max(2, Math.min(100, Number.parseInt(e.target.value) || 2));
+              setPartitionCount(v);
+            }}
+            inputProps={{ min: 2, max: 100 }}
+            variant="outlined"
+            size="small"
+            sx={{ width: 110 }}
+          />
+          <RandomTxSelector />
+        </Box>
       </Box>
       {error && (
         <Alert severity="error" sx={{ mt: 1.5 }} variant="outlined">

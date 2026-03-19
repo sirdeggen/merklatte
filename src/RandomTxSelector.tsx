@@ -3,6 +3,22 @@ import { useMerkleTree } from "./MerkleTreeProvider.tsx";
 import { useMerklePath, addNodeToProof } from "./MerkleProofsProvider.tsx";
 import { TreePart, TreeLeaf, MerkleProofByTx } from "./merkle-tree-data";
 
+function partitionInto<T>(arr: T[], n: number): T[][] {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  const weights = Array.from({ length: n }, () => Math.random() + 0.2);
+  const total = weights.reduce((s, w) => s + w, 0);
+  const sizes = weights.map((w) => Math.max(1, Math.round((w / total) * shuffled.length)));
+  const diff = shuffled.length - sizes.reduce((s, v) => s + v, 0);
+  sizes[sizes.length - 1] = Math.max(1, sizes[sizes.length - 1] + diff);
+  const groups: T[][] = [];
+  let cursor = 0;
+  for (const size of sizes) {
+    groups.push(shuffled.slice(cursor, cursor + size));
+    cursor += size;
+  }
+  return groups;
+}
+
 function collectLeaves(node: TreePart): TreeLeaf[] {
   if (!("left" in node && "right" in node)) {
     return node.duplicated ? [] : [node];
@@ -36,24 +52,23 @@ function buildProofForTxid(
 
 export const RandomTxSelector = () => {
   const { tree } = useMerkleTree();
-  const { setProof } = useMerklePath();
+  const { setProof, setPartitions, setPartitionCount } = useMerklePath();
 
   const handleClick = () => {
     const leaves = collectLeaves(tree);
     if (leaves.length === 0) return;
 
-    const count = Math.max(
-      2,
-      Math.floor(leaves.length * Math.max(Math.random(), 0.1)),
-    );
-    const shuffled = [...leaves].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, count);
+    const randomCount = Math.floor(Math.random() * 99) + 2; // 2–100
+    setPartitionCount(randomCount);
+    const groups = partitionInto(leaves, Math.min(randomCount, leaves.length));
+    const newPartitions = groups.map((g) => g.map((l) => l.hash));
 
     const newProof: MerkleProofByTx = {};
-    for (const leaf of selected) {
+    for (const leaf of leaves) {
       buildProofForTxid(leaf.hash, tree, newProof);
     }
     setProof(newProof);
+    setPartitions(newPartitions);
   };
 
   return (

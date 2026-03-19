@@ -1,33 +1,36 @@
 import { useMerklePath } from "./MerkleProofsProvider.tsx";
-import _ from "lodash";
 import { NoTransactionSelected } from "./NoTransactionSelected.tsx";
 import "./BsvUnifiedMerklePathView.css";
-import { displayAsIfItWereA32ByteHash } from "./RenderHashes.tsx";
 import { useBlockData } from "./BlockDataProvider.tsx";
 import { useState, useEffect } from "react";
 import { CircularProgress } from "@mui/material";
 import { ByteSize } from "./ByteSize.tsx";
 
+interface GroupResult {
+  txCount: number;
+  bytes: number;
+  hex: string;
+}
+
 interface ComputedResults {
-  count: number;
-  sampleHash: string;
-  sampleHex: string;
-  sampleBytes: number;
-  individualTotalBytes: number;
-  compoundHex: string;
-  compoundBytes: number;
+  groups: GroupResult[];
+  totalBumpBytes: number;
+  fullTreeTotalBytes: number; // groups.length × full tree
+  sampleIndividualHex: string;
+  sampleIndividualBytes: number;
+  totalIndividualBytes: number; // all txids × sampleIndividualBytes
 }
 
 // --- Component ---
 
 export const BsvUnifiedMerklePathView = () => {
-  const { proof } = useMerklePath();
+  const { partitions } = useMerklePath();
   const { blockData, fullBlockPath } = useBlockData();
   const [computing, setComputing] = useState(false);
   const [results, setResults] = useState<ComputedResults | null>(null);
 
   useEffect(() => {
-    if (_.isEmpty(proof) || !fullBlockPath || !blockData?.txids) {
+    if (!partitions || !fullBlockPath || !blockData?.txids) {
       setResults(null);
       setComputing(false);
       return;
@@ -37,47 +40,39 @@ export const BsvUnifiedMerklePathView = () => {
     setResults(null);
 
     const id = setTimeout(() => {
-      const knownHashes = Object.keys(proof).filter((h) =>
-        blockData.txids.includes(h),
-      );
-
-      let sampleHash = knownHashes[0] ?? '';
-      let sampleHex = '';
-      let sampleBytes = 0;
-      try {
-        const mp = fullBlockPath.extract([sampleHash]);
-        sampleHex = mp.toHex();
-        sampleBytes = mp.toBinary().length;
-      } catch {
-        sampleHex = '(error)';
-      }
-
-      let compoundHex = '';
-      let compoundBytes = 0;
-      try {
-        const compound = fullBlockPath.extract(knownHashes);
-        compoundHex = compound.toHex();
-        compoundBytes = compound.toBinary().length;
-      } catch (e) {
-        compoundHex = `(error: ${e instanceof Error ? e.message : String(e)})`;
-      }
-
-      setResults({
-        count: knownHashes.length,
-        sampleHash,
-        sampleHex,
-        sampleBytes,
-        individualTotalBytes: sampleBytes * knownHashes.length,
-        compoundHex,
-        compoundBytes,
+      const groups: GroupResult[] = partitions.map((group) => {
+        const known = group.filter((h) => blockData.txids.includes(h));
+        try {
+          const mp = fullBlockPath.extract(known);
+          return { txCount: known.length, bytes: mp.toBinary().length, hex: mp.toHex() };
+        } catch (e) {
+          return { txCount: known.length, bytes: 0, hex: `(error: ${e instanceof Error ? e.message : String(e)})` };
+        }
       });
+
+      let sampleIndividualHex = '';
+      let sampleIndividualBytes = 0;
+      const firstKnown = partitions.flat().find((h) => blockData.txids.includes(h));
+      if (firstKnown) {
+        try {
+          const mp = fullBlockPath.extract([firstKnown]);
+          sampleIndividualHex = mp.toHex();
+          sampleIndividualBytes = mp.toBinary().length;
+        } catch { /* leave as empty */ }
+      }
+
+      const totalBumpBytes = groups.reduce((s, g) => s + g.bytes, 0);
+      const fullTreeTotalBytes = groups.length * blockData.txids.length * 32;
+      const totalIndividualBytes = sampleIndividualBytes * blockData.txids.length;
+
+      setResults({ groups, totalBumpBytes, fullTreeTotalBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes });
       setComputing(false);
     }, 0);
 
     return () => clearTimeout(id);
-  }, [proof, blockData]);
+  }, [partitions, fullBlockPath]);
 
-  if (_.isEmpty(proof) || !blockData?.txids) {
+  if (!partitions || !blockData?.txids) {
     return (
       <div className="bump-comparison">
         <div className="bump-comparison__empty">
@@ -98,78 +93,87 @@ export const BsvUnifiedMerklePathView = () => {
     );
   }
 
-  const { count, sampleHash, sampleHex, sampleBytes, individualTotalBytes, compoundHex, compoundBytes } = results;
-  const fullTreeBytes = blockData.txids.length * 32;
-  const savings = individualTotalBytes - compoundBytes;
-  const pct = individualTotalBytes > 0 ? Math.round((savings / individualTotalBytes) * 100) : 0;
+  const { groups, totalBumpBytes, fullTreeTotalBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes } = results;
+  const savedVsIndividual = totalIndividualBytes - totalBumpBytes;
+  const savedVsIndividualPct = totalIndividualBytes > 0 ? Math.round((savedVsIndividual / totalIndividualBytes) * 100) : 0;
+  const savedVsFullTree = fullTreeTotalBytes - totalBumpBytes;
+  const savedVsFullTreePct = fullTreeTotalBytes > 0 ? Math.round((savedVsFullTree / fullTreeTotalBytes) * 100) : 0;
+  const exampleGroup = groups[0];
 
   return (
     <div className="bump-comparison">
       <div className="bump-comparison__stats">
         <div className="bump-stat">
-          <span className="bump-stat__label">Full Tree</span>
-          <span className="bump-stat__value" style={{ color: '#818cf8' }}><ByteSize bytes={fullTreeBytes} /></span>
-          <span className="bump-stat__detail">{blockData.txids.length} txids &times; 32 B</span>
+          <span className="bump-stat__label">{groups.length}× Full Tree</span>
+          <span className="bump-stat__value" style={{ color: '#818cf8' }}><ByteSize bytes={fullTreeTotalBytes} /></span>
+          <span className="bump-stat__detail">{groups.length} × {blockData.txids.length} txids × 32 B</span>
         </div>
         <div className="bump-stat">
           <span className="bump-stat__label">Individual BUMPs</span>
-          <span className="bump-stat__value bump-stat__value--individual"><ByteSize bytes={individualTotalBytes} /></span>
-          <span className="bump-stat__detail">{count} &times; <ByteSize bytes={sampleBytes} /></span>
+          <span className="bump-stat__value bump-stat__value--individual"><ByteSize bytes={totalIndividualBytes} /></span>
+          <span className="bump-stat__detail">{blockData.txids.length} × <ByteSize bytes={sampleIndividualBytes} /></span>
         </div>
         <div className="bump-stat">
-          <span className="bump-stat__label">Compound BUMP</span>
-          <span className="bump-stat__value bump-stat__value--compound"><ByteSize bytes={compoundBytes} /></span>
-          <span className="bump-stat__detail">{count} txids, 1 proof</span>
+          <span className="bump-stat__label">{groups.length} Compound BUMPs</span>
+          <span className="bump-stat__value bump-stat__value--compound"><ByteSize bytes={totalBumpBytes} /></span>
+          <span className="bump-stat__detail">1 proof per business</span>
         </div>
-        {savings > 0 && (
+        {savedVsIndividual > 0 && (
           <div className="bump-stat bump-stat--savings">
             <span className="bump-stat__label">Saved</span>
-            <span className="bump-stat__value bump-stat__value--savings">{pct}%</span>
-            <span className="bump-stat__detail">vs bumps</span>
-            <span className="bump-stat__value bump-stat__value--savings">{Math.round(((fullTreeBytes - compoundBytes) / fullTreeBytes) * 100)}%</span>
-            <span className="bump-stat__detail">vs tree</span>
+            <span className="bump-stat__value bump-stat__value--savings">{savedVsIndividualPct}%</span>
+            <span className="bump-stat__detail">vs individual BUMPs</span>
+            <span className="bump-stat__value bump-stat__value--savings">{savedVsFullTreePct}%</span>
+            <span className="bump-stat__detail">vs full tree</span>
           </div>
         )}
       </div>
+
+      {savedVsIndividual > 0 && (
+        <p className="bump-comparison__insight">
+          {groups.length} businesses sharing a block each need only their own compound BUMP —
+          saving <strong>{savedVsIndividualPct}%</strong> over individual per-transaction proofs
+          and <strong>{savedVsFullTreePct}%</strong> over transmitting the full transaction list.
+        </p>
+      )}
 
       <div className="bump-comparison__panels">
         <div className="bump-panel">
           <h3 className="bump-panel__title">
             Individual BUMP
-            <span className="bump-panel__subtitle">example proof</span>
+            <span className="bump-panel__subtitle">example — one proof per tx</span>
           </h3>
           <div className="bump-panel__scroll">
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', padding: '0.35rem 0.6rem 0', color: '#71717a', fontSize: '0.75rem' }}>
-              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f472b6', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
-              <span>× proofs of this size in the selection</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f472b6', fontVariantNumeric: 'tabular-nums' }}>{blockData.txids.length}</span>
+              <span>× proofs of this size across the full block</span>
             </div>
             <div className="bump-panel__block">
               <div className="bump-panel__block-label">
-                tx: {displayAsIfItWereA32ByteHash(sampleHash).slice(0, 16)}…
-                <span className="bump-panel__block-size"><ByteSize bytes={sampleBytes} /></span>
+                example tx proof
+                <span className="bump-panel__block-size"><ByteSize bytes={sampleIndividualBytes} /></span>
               </div>
-              <pre className="bump-panel__code">{sampleHex}</pre>
+              <pre className="bump-panel__code">{sampleIndividualHex}</pre>
             </div>
           </div>
         </div>
 
         <div className="bump-panel bump-panel--compound">
           <h3 className="bump-panel__title">
-            Compound BUMP
+            Example: Business 1 Compound BUMP
             <span className="bump-panel__subtitle">
-              All {count} transactions in one proof
+              {exampleGroup.txCount} txids — <ByteSize bytes={exampleGroup.bytes} />
             </span>
           </h3>
           <div className="bump-panel__scroll">
-            <pre className="bump-panel__code">{compoundHex}</pre>
+            <pre className="bump-panel__code">{exampleGroup.hex}</pre>
           </div>
         </div>
       </div>
 
       <p className="bump-comparison__note">
-        Compound BUMPs eliminate duplicate intermediate hashes shared between
-        individual proofs, reducing total proof size while preserving full
-        verification capability.
+        Each business receives a single compound BUMP covering only their transactions.
+        Shared intermediate hashes are included once, not repeated per transaction.
       </p>
     </div>
   );

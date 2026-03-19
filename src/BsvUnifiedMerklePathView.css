@@ -146,6 +146,23 @@
   word-break: break-all;
 }
 
+/* ---- Insight sentence ---- */
+.bump-comparison__insight {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #a1a1aa;
+  line-height: 1.6;
+  padding: 0.5rem 0.75rem;
+  background: #161616;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+}
+
+.bump-comparison__insight strong {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
 /* ---- Empty state ---- */
 .bump-comparison__empty {
   background: #161616;

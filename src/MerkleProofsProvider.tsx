@@ -11,6 +11,10 @@ import { useReset } from "./useReset.tsx";
 interface ContextValue {
   value: MerkleProofByTx;
   setValue: (proof: MerkleProofByTx) => void;
+  partitions: string[][] | null;
+  setPartitions: (p: string[][] | null) => void;
+  partitionCount: number;
+  setPartitionCount: (n: number) => void;
 }
 
 const Context = createContext<ContextValue | undefined>(undefined);
@@ -18,13 +22,19 @@ Context.displayName = "MerkleProofsProviderCtx";
 
 export const MerkleProofProvider: FC<PropsWithChildren> = ({ children }) => {
   const [value, setValue] = useState<MerkleProofByTx>({});
+  const [partitions, setPartitions] = useState<string[][] | null>(null);
+  const [partitionCount, setPartitionCount] = useState(5);
   const { addListener } = useReset();
-  addListener("merkleproof", () => setValue({}));
+  addListener("merkleproof", () => { setValue({}); setPartitions(null); });
   return (
     <Context.Provider
       value={{
         value,
         setValue,
+        partitions,
+        setPartitions,
+        partitionCount,
+        setPartitionCount,
       }}
     >
       {children}
@@ -44,6 +54,9 @@ export const useMerklePath = () => {
   const ctx = useContextValue();
   return {
     proof: ctx.value,
+    partitions: ctx.partitions,
+    partitionCount: ctx.partitionCount,
+    setPartitionCount: (n: number) => ctx.setPartitionCount(n),
     add: (hash: string, node: TreePart) => {
       const merkleProof = addNodeToProof(hash, node, ctx.value);
       ctx.setValue(merkleProof);
@@ -55,6 +68,9 @@ export const useMerklePath = () => {
     },
     setProof: (proof: MerkleProofByTx) => {
       ctx.setValue({ ...proof });
+    },
+    setPartitions: (p: string[][] | null) => {
+      ctx.setPartitions(p);
     },
   };
 };

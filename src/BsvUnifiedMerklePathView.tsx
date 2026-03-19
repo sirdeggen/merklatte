@@ -3,26 +3,78 @@ import _ from "lodash";
 import { NoTransactionSelected } from "./NoTransactionSelected.tsx";
 import "./BsvUnifiedMerklePathView.css";
 import { displayAsIfItWereA32ByteHash } from "./RenderHashes.tsx";
-import { MerklePath } from "@bsv/sdk";
 import { useBlockData } from "./BlockDataProvider.tsx";
+import { useState, useEffect } from "react";
+import { CircularProgress } from "@mui/material";
 
-// Build a single-level compound MerklePath containing every txid in the block.
-// MerklePath.extract() can then derive any sub-proof from this via findOrComputeLeaf.
-function buildFullBlockPath(txids: string[], blockHeight: number): MerklePath {
-  const level0 = txids.map((txid, idx) => ({ offset: idx, hash: txid, txid: true }));
-  if (level0.length % 2 === 1) {
-    (level0 as Array<{ offset: number; hash?: string; txid?: boolean; duplicate?: boolean }>)
-      .push({ offset: level0.length, duplicate: true });
-  }
-  return new MerklePath(blockHeight, [level0]);
+interface ComputedResults {
+  count: number;
+  sampleHash: string;
+  sampleHex: string;
+  sampleBytes: number;
+  individualTotalBytes: number;
+  compoundHex: string;
+  compoundBytes: number;
 }
 
 // --- Component ---
 
 export const BsvUnifiedMerklePathView = () => {
   const { proof } = useMerklePath();
-  const { blockData } = useBlockData();
-  const blockHeight = blockData?.height ?? 0;
+  const { blockData, fullBlockPath } = useBlockData();
+  const [computing, setComputing] = useState(false);
+  const [results, setResults] = useState<ComputedResults | null>(null);
+
+  useEffect(() => {
+    if (_.isEmpty(proof) || !fullBlockPath || !blockData?.txids) {
+      setResults(null);
+      setComputing(false);
+      return;
+    }
+
+    setComputing(true);
+    setResults(null);
+
+    const id = setTimeout(() => {
+      const knownHashes = Object.keys(proof).filter((h) =>
+        blockData.txids.includes(h),
+      );
+
+      let sampleHash = knownHashes[0] ?? '';
+      let sampleHex = '';
+      let sampleBytes = 0;
+      try {
+        const mp = fullBlockPath.extract([sampleHash]);
+        sampleHex = mp.toHex();
+        sampleBytes = mp.toBinary().length;
+      } catch {
+        sampleHex = '(error)';
+      }
+
+      let compoundHex = '';
+      let compoundBytes = 0;
+      try {
+        const compound = fullBlockPath.extract(knownHashes);
+        compoundHex = compound.toHex();
+        compoundBytes = compound.toBinary().length;
+      } catch (e) {
+        compoundHex = `(error: ${e instanceof Error ? e.message : String(e)})`;
+      }
+
+      setResults({
+        count: knownHashes.length,
+        sampleHash,
+        sampleHex,
+        sampleBytes,
+        individualTotalBytes: sampleBytes * knownHashes.length,
+        compoundHex,
+        compoundBytes,
+      });
+      setComputing(false);
+    }, 0);
+
+    return () => clearTimeout(id);
+  }, [proof, blockData]);
 
   if (_.isEmpty(proof) || !blockData?.txids) {
     return (
@@ -34,39 +86,20 @@ export const BsvUnifiedMerklePathView = () => {
     );
   }
 
-  const txHashes = Object.keys(proof);
-
-  // Single-level full block path — all txids; SDK computes intermediate nodes on demand
-  const fullBlockPath = buildFullBlockPath(blockData.txids, blockHeight);
-
-  // Individual BUMPs: use MerklePath.extract() to get a minimal proof per txid
-  const knownHashes = txHashes.filter((h) => blockData.txids.includes(h));
-  const individualItems = knownHashes.map((hash) => {
-    try {
-      const mp = fullBlockPath.extract([hash]);
-      return { hash, hex: mp.toHex(), bytes: mp.toBinary().length };
-    } catch {
-      return { hash, hex: '(error)', bytes: 0 };
-    }
-  });
-  const individualTotalBytes = individualItems.reduce((sum, { bytes }) => sum + bytes, 0);
-
-  // Compound BUMP: single extract() call for all selected txids
-  let compoundHex = '';
-  let compoundBytes = 0;
-  try {
-    const compound = fullBlockPath.extract(knownHashes);
-    compoundHex = compound.toHex();
-    compoundBytes = compound.toBinary().length;
-  } catch (e) {
-    compoundHex = `(error: ${e instanceof Error ? e.message : String(e)})`;
+  if (computing || !results) {
+    return (
+      <div className="bump-comparison">
+        <div className="bump-comparison__empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+          <CircularProgress size={28} sx={{ color: '#6ee7b7' }} />
+          <span style={{ fontSize: '0.8rem', color: '#52525b' }}>Computing Merkle paths…</span>
+        </div>
+      </div>
+    );
   }
 
+  const { count, sampleHash, sampleHex, sampleBytes, individualTotalBytes, compoundHex, compoundBytes } = results;
   const savings = individualTotalBytes - compoundBytes;
-  const pct =
-    individualTotalBytes > 0
-      ? Math.round((savings / individualTotalBytes) * 100)
-      : 0;
+  const pct = individualTotalBytes > 0 ? Math.round((savings / individualTotalBytes) * 100) : 0;
 
   return (
     <div className="bump-comparison">
@@ -77,8 +110,7 @@ export const BsvUnifiedMerklePathView = () => {
             {individualTotalBytes} bytes
           </span>
           <span className="bump-stat__detail">
-            {txHashes.length} proof{txHashes.length !== 1 ? "s" : ""} &times;
-            avg {Math.round(individualTotalBytes / txHashes.length)} B
+            {count} proof{count !== 1 ? 's' : ''} &times; {sampleBytes} B each
           </span>
         </div>
         <div className="bump-stat">
@@ -101,21 +133,19 @@ export const BsvUnifiedMerklePathView = () => {
       <div className="bump-comparison__panels">
         <div className="bump-panel">
           <h3 className="bump-panel__title">
-            Individual BUMPs
+            Individual BUMP
             <span className="bump-panel__subtitle">
-              One proof per transaction
+              Example — 1 of {count} identical-size proofs
             </span>
           </h3>
           <div className="bump-panel__scroll">
-            {individualItems.map(({ hash, hex, bytes }) => (
-              <div key={hash} className="bump-panel__block">
-                <div className="bump-panel__block-label">
-                  tx: {displayAsIfItWereA32ByteHash(hash).slice(0, 16)}...
-                  <span className="bump-panel__block-size">{bytes} B</span>
-                </div>
-                <pre className="bump-panel__code">{hex}</pre>
+            <div className="bump-panel__block">
+              <div className="bump-panel__block-label">
+                tx: {displayAsIfItWereA32ByteHash(sampleHash).slice(0, 16)}…
+                <span className="bump-panel__block-size">{sampleBytes} B</span>
               </div>
-            ))}
+              <pre className="bump-panel__code">{sampleHex}</pre>
+            </div>
           </div>
         </div>
 
@@ -123,7 +153,7 @@ export const BsvUnifiedMerklePathView = () => {
           <h3 className="bump-panel__title">
             Compound BUMP
             <span className="bump-panel__subtitle">
-              All transactions in one proof
+              All {count} transactions in one proof
             </span>
           </h3>
           <div className="bump-panel__scroll">

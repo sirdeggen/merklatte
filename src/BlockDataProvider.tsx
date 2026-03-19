@@ -5,6 +5,7 @@ import {
   ReactNode,
   useEffect,
 } from "react";
+import { MerklePath } from "@bsv/sdk";
 
 interface BlockData {
   height: number;
@@ -15,11 +16,26 @@ interface BlockData {
 
 interface BlockDataContextValue {
   blockData: BlockData | null;
+  fullBlockPath: MerklePath | null;
   loading: boolean;
   error: string | null;
   fetchBlock: (height: number) => Promise<void>;
   useFakeData: boolean;
   setUseFakeData: (fake: boolean) => void;
+}
+
+function buildAndExpandBlockPath(txids: string[], height: number): MerklePath {
+  const level0 = txids.map((txid, idx) => ({ offset: idx, hash: txid, txid: true }));
+  if (level0.length % 2 === 1) {
+    (level0 as Array<{ offset: number; hash?: string; txid?: boolean; duplicate?: boolean }>)
+      .push({ offset: level0.length, duplicate: true });
+  }
+  const singleLevel = new MerklePath(height, [level0]);
+  try {
+    return singleLevel.extract(txids);
+  } catch {
+    return singleLevel;
+  }
 }
 
 const BlockDataContext = createContext<BlockDataContextValue | undefined>(
@@ -28,9 +44,18 @@ const BlockDataContext = createContext<BlockDataContextValue | undefined>(
 
 export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
   const [blockData, setBlockData] = useState<BlockData | null>(null);
+  const [fullBlockPath, setFullBlockPath] = useState<MerklePath | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [useFakeData, setUseFakeData] = useState(false);
+
+  useEffect(() => {
+    if (!blockData?.txids?.length) {
+      setFullBlockPath(null);
+      return;
+    }
+    setFullBlockPath(buildAndExpandBlockPath(blockData.txids, blockData.height));
+  }, [blockData]);
 
   const fetchBlock = async (height: number) => {
     setLoading(true);
@@ -79,6 +104,7 @@ export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
     <BlockDataContext.Provider
       value={{
         blockData,
+        fullBlockPath,
         loading,
         error,
         fetchBlock,

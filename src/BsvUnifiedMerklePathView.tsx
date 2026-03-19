@@ -6,6 +6,7 @@ import { displayAsIfItWereA32ByteHash } from "./RenderHashes.tsx";
 import { useBlockData } from "./BlockDataProvider.tsx";
 import { useState, useEffect } from "react";
 import { CircularProgress } from "@mui/material";
+import { ByteSize } from "./ByteSize.tsx";
 
 interface ComputedResults {
   count: number;
@@ -98,6 +99,7 @@ export const BsvUnifiedMerklePathView = () => {
   }
 
   const { count, sampleHash, sampleHex, sampleBytes, individualTotalBytes, compoundHex, compoundBytes } = results;
+  const fullTreeBytes = blockData.txids.length * 32;
   const savings = individualTotalBytes - compoundBytes;
   const pct = individualTotalBytes > 0 ? Math.round((savings / individualTotalBytes) * 100) : 0;
 
@@ -105,18 +107,27 @@ export const BsvUnifiedMerklePathView = () => {
     <div className="bump-comparison">
       <div className="bump-comparison__stats">
         <div className="bump-stat">
-          <span className="bump-stat__label">Individual BUMPs</span>
-          <span className="bump-stat__value bump-stat__value--individual">
-            {individualTotalBytes} bytes
+          <span className="bump-stat__label">Full Tree</span>
+          <span className="bump-stat__value" style={{ color: '#818cf8' }}>
+            <ByteSize bytes={fullTreeBytes} />
           </span>
           <span className="bump-stat__detail">
-            {count} proof{count !== 1 ? 's' : ''} &times; {sampleBytes} B each
+            {blockData.txids.length} txids &times; 32 B
+          </span>
+        </div>
+        <div className="bump-stat">
+          <span className="bump-stat__label">Individual BUMPs</span>
+          <span className="bump-stat__value bump-stat__value--individual">
+            <ByteSize bytes={individualTotalBytes} />
+          </span>
+          <span className="bump-stat__detail">
+            {count} proof{count !== 1 ? 's' : ''} &times; <ByteSize bytes={sampleBytes} /> each
           </span>
         </div>
         <div className="bump-stat">
           <span className="bump-stat__label">Compound BUMP</span>
           <span className="bump-stat__value bump-stat__value--compound">
-            {compoundBytes} bytes
+            <ByteSize bytes={compoundBytes} />
           </span>
           <span className="bump-stat__detail">single proof, all txids</span>
         </div>
@@ -124,8 +135,13 @@ export const BsvUnifiedMerklePathView = () => {
           <div className="bump-stat bump-stat--savings">
             <span className="bump-stat__label">Savings</span>
             <span className="bump-stat__value bump-stat__value--savings">
-              {savings} bytes ({pct}%)
+              <ByteSize bytes={savings} /> ({pct}%)
             </span>
+            <span className="bump-stat__detail">vs individual BUMPs</span>
+            <span className="bump-stat__value bump-stat__value--savings" style={{ fontSize: '1.1rem' }}>
+              <ByteSize bytes={fullTreeBytes - compoundBytes} /> ({Math.round(((fullTreeBytes - compoundBytes) / fullTreeBytes) * 100)}%)
+            </span>
+            <span className="bump-stat__detail">vs full tree</span>
           </div>
         )}
       </div>
@@ -142,7 +158,7 @@ export const BsvUnifiedMerklePathView = () => {
             <div className="bump-panel__block">
               <div className="bump-panel__block-label">
                 tx: {displayAsIfItWereA32ByteHash(sampleHash).slice(0, 16)}…
-                <span className="bump-panel__block-size">{sampleBytes} B</span>
+                <span className="bump-panel__block-size"><ByteSize bytes={sampleBytes} /></span>
               </div>
               <pre className="bump-panel__code">{sampleHex}</pre>
             </div>

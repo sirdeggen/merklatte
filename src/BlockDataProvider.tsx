@@ -12,6 +12,7 @@ interface BlockData {
   hash: string;
   txids: string[];
   merkleRoot: string;
+  size?: number;
 }
 
 interface BlockDataContextValue {
@@ -84,6 +85,7 @@ export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
         tx: Array<string>;
         merkleroot: string;
         hash: string;
+        size?: number;
       }
       const block = (await blockRes.json()) as BlockResponse;
 
@@ -92,6 +94,7 @@ export const BlockDataProvider = ({ children }: { children: ReactNode }) => {
         hash: block.hash,
         txids: block.tx,
         merkleRoot: block.merkleroot,
+        size: block.size,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");

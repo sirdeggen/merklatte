@@ -16,6 +16,7 @@ interface ComputedResults {
   groups: GroupResult[];
   totalBumpBytes: number;
   fullTreeTotalBytes: number; // groups.length × full tree
+  fullBlockBumpBytes: number; // single compound BUMP for all txids
   sampleIndividualHex: string;
   sampleIndividualBytes: number;
   totalIndividualBytes: number; // all txids × sampleIndividualBytes
@@ -64,8 +65,9 @@ export const BsvUnifiedMerklePathView = () => {
       const totalBumpBytes = groups.reduce((s, g) => s + g.bytes, 0);
       const fullTreeTotalBytes = groups.length * blockData.txids.length * 32;
       const totalIndividualBytes = sampleIndividualBytes * blockData.txids.length;
+      const fullBlockBumpBytes = fullBlockPath.toBinary().length;
 
-      setResults({ groups, totalBumpBytes, fullTreeTotalBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes });
+      setResults({ groups, totalBumpBytes, fullTreeTotalBytes, fullBlockBumpBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes });
       setComputing(false);
     }, 0);
 
@@ -93,7 +95,7 @@ export const BsvUnifiedMerklePathView = () => {
     );
   }
 
-  const { groups, totalBumpBytes, fullTreeTotalBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes } = results;
+  const { groups, totalBumpBytes, fullTreeTotalBytes, fullBlockBumpBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes } = results;
   const savedVsIndividual = totalIndividualBytes - totalBumpBytes;
   const savedVsIndividualPct = totalIndividualBytes > 0 ? Math.round((savedVsIndividual / totalIndividualBytes) * 100) : 0;
   const savedVsFullTree = fullTreeTotalBytes - totalBumpBytes;
@@ -118,6 +120,18 @@ export const BsvUnifiedMerklePathView = () => {
           <span className="bump-stat__value bump-stat__value--compound"><ByteSize bytes={totalBumpBytes} /></span>
           <span className="bump-stat__detail">1 proof per business</span>
         </div>
+        <div className="bump-stat">
+          <span className="bump-stat__label">Full Block BUMP</span>
+          <span className="bump-stat__value" style={{ color: '#34d399' }}><ByteSize bytes={fullBlockBumpBytes} /></span>
+          <span className="bump-stat__detail">{blockData.txids.length} txids, 1 universal proof</span>
+        </div>
+        {blockData.size != null && (
+          <div className="bump-stat">
+            <span className="bump-stat__label">Raw Block Data</span>
+            <span className="bump-stat__value" style={{ color: '#94a3b8' }}><ByteSize bytes={blockData.size} /></span>
+            <span className="bump-stat__detail">full transaction data</span>
+          </div>
+        )}
         {savedVsIndividual > 0 && (
           <div className="bump-stat bump-stat--savings">
             <span className="bump-stat__label">Saved</span>
@@ -134,6 +148,9 @@ export const BsvUnifiedMerklePathView = () => {
           {groups.length} businesses sharing a block each need only their own compound BUMP —
           saving <strong>{savedVsIndividualPct}%</strong> over individual per-transaction proofs
           and <strong>{savedVsFullTreePct}%</strong> over transmitting the full transaction list.
+          The {groups.length} targeted proofs total <strong><ByteSize bytes={totalBumpBytes} /></strong>, compared to{' '}
+          <strong><ByteSize bytes={fullBlockBumpBytes} /></strong> for a single proof covering the entire block
+          {blockData.size != null && <>{' '}— and just <strong>{((totalBumpBytes / blockData.size) * 100).toFixed(2)}%</strong> of the raw block data size.</>}.
         </p>
       )}
 

@@ -5,7 +5,7 @@ import { TreePart, TreeLeaf, MerkleProofByTx } from "./merkle-tree-data";
 
 function collectLeaves(node: TreePart): TreeLeaf[] {
   if (!("left" in node && "right" in node)) {
-    return node.duplicated ? [] : [node as TreeLeaf];
+    return node.duplicated ? [] : [node];
   }
   return [...collectLeaves(node.left), ...collectLeaves(node.right)];
 }
@@ -49,11 +49,11 @@ export const RandomTxSelector = () => {
     const shuffled = [...leaves].sort(() => Math.random() - 0.5);
     const selected = shuffled.slice(0, count);
 
-    const proof: MerkleProofByTx = {};
+    const newProof: MerkleProofByTx = {};
     for (const leaf of selected) {
-      buildProofForTxid(leaf.hash, tree, proof);
+      buildProofForTxid(leaf.hash, tree, newProof);
     }
-    setProof(proof);
+    setProof(newProof);
   };
 
   return (

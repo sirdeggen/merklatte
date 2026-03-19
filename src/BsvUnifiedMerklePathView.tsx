@@ -108,40 +108,26 @@ export const BsvUnifiedMerklePathView = () => {
       <div className="bump-comparison__stats">
         <div className="bump-stat">
           <span className="bump-stat__label">Full Tree</span>
-          <span className="bump-stat__value" style={{ color: '#818cf8' }}>
-            <ByteSize bytes={fullTreeBytes} />
-          </span>
-          <span className="bump-stat__detail">
-            {blockData.txids.length} txids &times; 32 B
-          </span>
+          <span className="bump-stat__value" style={{ color: '#818cf8' }}><ByteSize bytes={fullTreeBytes} /></span>
+          <span className="bump-stat__detail">{blockData.txids.length} txids &times; 32 B</span>
         </div>
         <div className="bump-stat">
           <span className="bump-stat__label">Individual BUMPs</span>
-          <span className="bump-stat__value bump-stat__value--individual">
-            <ByteSize bytes={individualTotalBytes} />
-          </span>
-          <span className="bump-stat__detail">
-            {count} proof{count !== 1 ? 's' : ''} &times; <ByteSize bytes={sampleBytes} /> each
-          </span>
+          <span className="bump-stat__value bump-stat__value--individual"><ByteSize bytes={individualTotalBytes} /></span>
+          <span className="bump-stat__detail">{count} &times; <ByteSize bytes={sampleBytes} /></span>
         </div>
         <div className="bump-stat">
           <span className="bump-stat__label">Compound BUMP</span>
-          <span className="bump-stat__value bump-stat__value--compound">
-            <ByteSize bytes={compoundBytes} />
-          </span>
-          <span className="bump-stat__detail">single proof, all txids</span>
+          <span className="bump-stat__value bump-stat__value--compound"><ByteSize bytes={compoundBytes} /></span>
+          <span className="bump-stat__detail">{count} txids, 1 proof</span>
         </div>
         {savings > 0 && (
           <div className="bump-stat bump-stat--savings">
-            <span className="bump-stat__label">Savings</span>
-            <span className="bump-stat__value bump-stat__value--savings">
-              <ByteSize bytes={savings} /> ({pct}%)
-            </span>
-            <span className="bump-stat__detail">vs individual BUMPs</span>
-            <span className="bump-stat__value bump-stat__value--savings" style={{ fontSize: '1.1rem' }}>
-              <ByteSize bytes={fullTreeBytes - compoundBytes} /> ({Math.round(((fullTreeBytes - compoundBytes) / fullTreeBytes) * 100)}%)
-            </span>
-            <span className="bump-stat__detail">vs full tree</span>
+            <span className="bump-stat__label">Saved</span>
+            <span className="bump-stat__value bump-stat__value--savings">{pct}%</span>
+            <span className="bump-stat__detail">vs bumps</span>
+            <span className="bump-stat__value bump-stat__value--savings">{Math.round(((fullTreeBytes - compoundBytes) / fullTreeBytes) * 100)}%</span>
+            <span className="bump-stat__detail">vs tree</span>
           </div>
         )}
       </div>
@@ -150,11 +136,13 @@ export const BsvUnifiedMerklePathView = () => {
         <div className="bump-panel">
           <h3 className="bump-panel__title">
             Individual BUMP
-            <span className="bump-panel__subtitle">
-              Example — 1 of {count} identical-size proofs
-            </span>
+            <span className="bump-panel__subtitle">example proof</span>
           </h3>
           <div className="bump-panel__scroll">
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', padding: '0.35rem 0.6rem 0', color: '#71717a', fontSize: '0.75rem' }}>
+              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f472b6', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
+              <span>× proofs of this size in the selection</span>
+            </div>
             <div className="bump-panel__block">
               <div className="bump-panel__block-label">
                 tx: {displayAsIfItWereA32ByteHash(sampleHash).slice(0, 16)}…

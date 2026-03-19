@@ -4,7 +4,6 @@ import { MerkleProofProvider } from "./MerkleProofsProvider.tsx";
 import { ResetProvider } from "./useReset.tsx";
 import { BsvUnifiedMerklePathView } from "./BsvUnifiedMerklePathView.tsx";
 import {
-  Container,
   Typography,
   Paper,
   Box,
@@ -78,13 +77,17 @@ function App() {
                     right: 0,
                     bottom: 0,
                     overflow: "auto",
-                    px: { xs: 2, md: 4 },
-                    py: 3,
+                    px: { xs: 1, md: 2 },
+                    pt: 1.5,
+                    pb: 3,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1.5,
                   }}
                 >
                   <Paper
                     elevation={0}
-                    sx={{ p: 3, mb: 3, overflow: "auto", maxHeight: 520 }}
+                    sx={{ p: 1.5, overflow: "auto", height: "auto", maxHeight: "80vh", flexShrink: 0 }}
                   >
                     <MerkleTreeView />
                   </Paper>

@@ -1,9 +1,71 @@
+/* ---- Root layout ---- */
+.bump-comparison {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ---- Hero savings banner ---- */
+.bump-comparison__savings-hero {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.6rem 1.5rem;
+  background: linear-gradient(135deg, #1a1500 0%, #1f1a00 60%, #161200 100%);
+  border: 1px solid #fbbf2466;
+  border-radius: 10px;
+  box-shadow: 0 0 24px #fbbf2420, inset 0 0 24px #fbbf240a;
+}
+
+.bump-savings-hero__label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #a16207;
+  font-weight: 700;
+  min-width: 2.5rem;
+}
+
+.bump-savings-hero__numbers {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex: 1;
+}
+
+.bump-savings-hero__figure {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.bump-savings-hero__pct {
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 0 20px #fbbf2480;
+}
+
+.bump-savings-hero__vs {
+  font-size: 0.75rem;
+  color: #78716c;
+}
+
+.bump-savings-hero__divider {
+  width: 1px;
+  height: 2rem;
+  background: #fbbf2430;
+}
+
 /* ---- Stats bar ---- */
 .bump-comparison__stats {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 0.75rem;
   background: #161616;
   border: 1px solid #27272a;
   border-radius: 10px;
@@ -52,16 +114,14 @@
   color: #52525b;
 }
 
-.bump-stat--savings {
-  border-color: #fbbf2433;
-  background: #1a1a10;
-}
 
 /* ---- Side-by-side panels ---- */
 .bump-comparison__panels {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+  flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 860px) {
@@ -77,7 +137,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: 480px;
+  min-height: 0;
 }
 
 .bump-panel--compound {

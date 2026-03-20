@@ -5,6 +5,7 @@ import { useBlockData } from "./BlockDataProvider.tsx";
 import { useState, useEffect } from "react";
 import { CircularProgress } from "@mui/material";
 import { ByteSize } from "./ByteSize.tsx";
+import { MerklePath } from '@bsv/sdk';
 
 interface GroupResult {
   txCount: number;
@@ -20,6 +21,50 @@ interface ComputedResults {
   sampleIndividualHex: string;
   sampleIndividualBytes: number;
   totalIndividualBytes: number; // all txids × sampleIndividualBytes
+}
+
+function computeGroupResult(group: string[], knownTxids: string[], blockPath: MerklePath): GroupResult {
+  const known = group.filter((h) => knownTxids.includes(h));
+  try {
+    const mp = blockPath.extract(known);
+    return { txCount: known.length, bytes: mp.toBinary().length, hex: mp.toHex() };
+  } catch (e) {
+    return { txCount: known.length, bytes: 0, hex: `(error: ${e instanceof Error ? e.message : String(e)})` };
+  }
+}
+
+function computeResults(
+  proofKeys: string[],
+  txids: string[],
+  partitions: string[][] | null,
+  blockPath: MerklePath,
+): ComputedResults {
+  const biz1Txids = proofKeys
+    .filter((h) => txids.includes(h))
+    .sort((a, b) => txids.indexOf(a) - txids.indexOf(b));
+
+  const otherPartitions = partitions ? partitions.slice(1) : [];
+  const allRawGroups = [biz1Txids, ...otherPartitions];
+  const groups = allRawGroups.map((g) => computeGroupResult(g, txids, blockPath));
+  console.log({ groups })
+
+  let sampleIndividualHex = '';
+  let sampleIndividualBytes = 0;
+  const lowestOffsetTx = biz1Txids[0];
+  if (lowestOffsetTx) {
+    try {
+      const mp = blockPath.extract([lowestOffsetTx]);
+      sampleIndividualHex = mp.toHex();
+      sampleIndividualBytes = mp.toBinary().length;
+    } catch { /* leave as empty */ }
+  }
+
+  const totalBumpBytes = groups.reduce((s, g) => s + g.bytes, 0);
+  const fullTreeTotalBytes = groups.length * txids.length * 32;
+  const totalIndividualBytes = sampleIndividualBytes * txids.length;
+  const fullBlockBumpBytes = blockPath.toBinary().length;
+
+  return { groups, totalBumpBytes, fullTreeTotalBytes, fullBlockBumpBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes };
 }
 
 // --- Component ---
@@ -43,44 +88,7 @@ export const BsvUnifiedMerklePathView = () => {
     setResults(null);
 
     const id = setTimeout(() => {
-      // Business 1: txids from live proof, sorted by block offset (ascending)
-      const biz1Txids = proofKeys
-        .filter((h) => blockData.txids.includes(h))
-        .sort((a, b) => blockData.txids.indexOf(a) - blockData.txids.indexOf(b));
-
-      // Businesses 2-N: remaining partitions (if any)
-      const otherPartitions = partitions ? partitions.slice(1) : [];
-
-      const allRawGroups = [biz1Txids, ...otherPartitions];
-
-      const groups: GroupResult[] = allRawGroups.map((group) => {
-        const known = group.filter((h) => blockData.txids.includes(h));
-        try {
-          const mp = fullBlockPath.extract(known);
-          return { txCount: known.length, bytes: mp.toBinary().length, hex: mp.toHex() };
-        } catch (e) {
-          return { txCount: known.length, bytes: 0, hex: `(error: ${e instanceof Error ? e.message : String(e)})` };
-        }
-      });
-
-      // Individual BUMP sample = lowest-offset tx in Business 1's selection
-      let sampleIndividualHex = '';
-      let sampleIndividualBytes = 0;
-      const lowestOffsetTx = biz1Txids[0];
-      if (lowestOffsetTx) {
-        try {
-          const mp = fullBlockPath.extract([lowestOffsetTx]);
-          sampleIndividualHex = mp.toHex();
-          sampleIndividualBytes = mp.toBinary().length;
-        } catch { /* leave as empty */ }
-      }
-
-      const totalBumpBytes = groups.reduce((s, g) => s + g.bytes, 0);
-      const fullTreeTotalBytes = groups.length * blockData.txids.length * 32;
-      const totalIndividualBytes = sampleIndividualBytes * blockData.txids.length;
-      const fullBlockBumpBytes = fullBlockPath.toBinary().length;
-
-      setResults({ groups, totalBumpBytes, fullTreeTotalBytes, fullBlockBumpBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes });
+      setResults(computeResults(proofKeys, blockData.txids, partitions, fullBlockPath));
       setComputing(false);
     }, 0);
 
@@ -108,15 +116,33 @@ export const BsvUnifiedMerklePathView = () => {
     );
   }
 
+  const rawDataSize = blockData.size ?? 0
   const { groups, totalBumpBytes, fullTreeTotalBytes, fullBlockBumpBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes } = results;
   const savedVsIndividual = totalIndividualBytes - totalBumpBytes;
   const savedVsIndividualPct = totalIndividualBytes > 0 ? Math.round((savedVsIndividual / totalIndividualBytes) * 100) : 0;
-  const savedVsFullTree = fullTreeTotalBytes - totalBumpBytes;
-  const savedVsFullTreePct = fullTreeTotalBytes > 0 ? Math.round((savedVsFullTree / fullTreeTotalBytes) * 100) : 0;
+  const savedVsFullTree = rawDataSize - totalBumpBytes;
+  const savedVsFullTreePct = fullTreeTotalBytes > 0 ? Math.round((savedVsFullTree / rawDataSize) * 100) : 0;
   const exampleGroup = groups[0];
 
   return (
     <div className="bump-comparison">
+      {savedVsIndividual > 0 && (
+        <div className="bump-comparison__savings-hero">
+          <span className="bump-savings-hero__label">Saved</span>
+          <div className="bump-savings-hero__numbers">
+            <div className="bump-savings-hero__figure">
+              <span className="bump-savings-hero__pct">{savedVsIndividualPct}%</span>
+              <span className="bump-savings-hero__vs">vs individual BUMPs</span>
+            </div>
+            <div className="bump-savings-hero__divider" />
+            <div className="bump-savings-hero__figure">
+              <span className="bump-savings-hero__pct">{savedVsFullTreePct}%</span>
+              <span className="bump-savings-hero__vs">vs full tree</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bump-comparison__stats">
         <div className="bump-stat">
           <span className="bump-stat__label">{groups.length}× Full Tree</span>
@@ -145,33 +171,12 @@ export const BsvUnifiedMerklePathView = () => {
             <span className="bump-stat__detail">full transaction data</span>
           </div>
         )}
-        {savedVsIndividual > 0 && (
-          <div className="bump-stat bump-stat--savings">
-            <span className="bump-stat__label">Saved</span>
-            <span className="bump-stat__value bump-stat__value--savings">{savedVsIndividualPct}%</span>
-            <span className="bump-stat__detail">vs individual BUMPs</span>
-            <span className="bump-stat__value bump-stat__value--savings">{savedVsFullTreePct}%</span>
-            <span className="bump-stat__detail">vs full tree</span>
-          </div>
-        )}
       </div>
-
-      {savedVsIndividual > 0 && (
-        <p className="bump-comparison__insight">
-          {groups.length} businesses sharing a block each need only their own compound BUMP —
-          saving <strong>{savedVsIndividualPct}%</strong> over individual per-transaction proofs
-          and <strong>{savedVsFullTreePct}%</strong> over transmitting the full transaction list.
-          The {groups.length} targeted proofs total <strong><ByteSize bytes={totalBumpBytes} /></strong>, compared to{' '}
-          <strong><ByteSize bytes={fullBlockBumpBytes} /></strong> for a single proof covering the entire block
-          {blockData.size != null && <>{' '}— and just <strong>{((totalBumpBytes / blockData.size) * 100).toFixed(2)}%</strong> of the raw block data size.</>}.
-        </p>
-      )}
 
       <div className="bump-comparison__panels">
         <div className="bump-panel">
           <h3 className="bump-panel__title">
-            Individual BUMP
-            <span className="bump-panel__subtitle">example — one proof per tx</span>
+            Individual BUMP <span className="bump-panel__subtitle">example — one proof per tx</span>
           </h3>
           <div className="bump-panel__scroll">
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', padding: '0.35rem 0.6rem 0', color: '#71717a', fontSize: '0.75rem' }}>
@@ -180,8 +185,7 @@ export const BsvUnifiedMerklePathView = () => {
             </div>
             <div className="bump-panel__block">
               <div className="bump-panel__block-label">
-                example tx proof
-                <span className="bump-panel__block-size"><ByteSize bytes={sampleIndividualBytes} /></span>
+                example tx proof <span className="bump-panel__block-size"><ByteSize bytes={sampleIndividualBytes} /></span>
               </div>
               <pre className="bump-panel__code">{sampleIndividualHex}</pre>
             </div>
@@ -190,21 +194,13 @@ export const BsvUnifiedMerklePathView = () => {
 
         <div className="bump-panel bump-panel--compound">
           <h3 className="bump-panel__title">
-            Example: Business 1 Compound BUMP
-            <span className="bump-panel__subtitle">
-              {exampleGroup.txCount} txids — <ByteSize bytes={exampleGroup.bytes} />
-            </span>
+            Example: Business 1 Compound BUMP <span className="bump-panel__subtitle">{exampleGroup.txCount} txids — <ByteSize bytes={exampleGroup.bytes} /></span>
           </h3>
           <div className="bump-panel__scroll">
             <pre className="bump-panel__code">{exampleGroup.hex}</pre>
           </div>
         </div>
       </div>
-
-      <p className="bump-comparison__note">
-        Each business receives a single compound BUMP covering only their transactions.
-        Shared intermediate hashes are included once, not repeated per transaction.
-      </p>
     </div>
   );
 };

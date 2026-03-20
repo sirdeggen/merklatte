@@ -76,22 +76,24 @@ function App() {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    overflow: "auto",
+                    overflow: "hidden",
                     px: { xs: 1, md: 2 },
                     pt: 1.5,
-                    pb: 3,
+                    pb: 1.5,
                     display: "flex",
                     flexDirection: "column",
-                    gap: 1.5,
+                    gap: 1,
                   }}
                 >
                   <Paper
                     elevation={0}
-                    sx={{ p: 1.5, overflow: "auto", height: "auto", maxHeight: "80vh", flexShrink: 0 }}
+                    sx={{ p: 1.5, overflow: "auto", maxHeight: "48vh", flexShrink: 0 }}
                   >
                     <MerkleTreeView />
                   </Paper>
-                  <BsvUnifiedMerklePathView />
+                  <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                    <BsvUnifiedMerklePathView />
+                  </Box>
                 </Box>
               </MerkleProofProvider>
             </MerkleTreeProvider>

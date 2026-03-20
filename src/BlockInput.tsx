@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TextField, Button, Box, CircularProgress, Alert } from "@mui/material";
 import { useBlockData } from "./BlockDataProvider";
 import { RandomTxSelector } from "./RandomTxSelector.tsx";
@@ -6,8 +6,13 @@ import { useMerklePath } from "./MerkleProofsProvider.tsx";
 
 export const BlockInput = () => {
   const [heightInput, setHeightInput] = useState("865000");
-  const { fetchBlock, loading, error } = useBlockData();
+  const { fetchBlock, loading, error, blockData } = useBlockData();
   const { partitionCount, setPartitionCount } = useMerklePath();
+  const maxBusinesses = blockData?.txids.length ?? 100;
+
+  useEffect(() => {
+    if (partitionCount > maxBusinesses) setPartitionCount(maxBusinesses);
+  }, [maxBusinesses]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,10 +48,10 @@ export const BlockInput = () => {
             type="number"
             value={partitionCount}
             onChange={(e) => {
-              const v = Math.max(2, Math.min(100, Number.parseInt(e.target.value) || 2));
+              const v = Math.max(2, Math.min(maxBusinesses, Number.parseInt(e.target.value) || 2));
               setPartitionCount(v);
             }}
-            inputProps={{ min: 2, max: 100 }}
+            inputProps={{ min: 2, max: maxBusinesses }}
             variant="outlined"
             size="small"
             sx={{ width: 110 }}

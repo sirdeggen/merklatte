@@ -77,9 +77,9 @@ export const RandomTxSelector = () => {
     const leaves = collectLeaves(tree);
     if (leaves.length === 0) return;
 
-    const randomCount = Math.floor(Math.random() * 99) + 2; // 2–100
+    const randomCount = Math.min(Math.floor(Math.random() * 99) + 2, leaves.length); // 2–txCount
     setPartitionCount(randomCount);
-    const groups = partitionInto(leaves, Math.min(randomCount, leaves.length));
+    const groups = partitionInto(leaves, randomCount);
     const newPartitions = groups.map((g) => g.map((l) => l.hash));
 
     const newProof: MerkleProofByTx = {};

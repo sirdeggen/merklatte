@@ -116,7 +116,7 @@ export const BsvUnifiedMerklePathView = () => {
     );
   }
 
-  const rawDataSize = blockData.size ?? 0
+  const rawDataSize = (blockData?.txids.length || 0) * 32 * (results.groups.length || 1);
   const { groups, totalBumpBytes, fullTreeTotalBytes, fullBlockBumpBytes, sampleIndividualHex, sampleIndividualBytes, totalIndividualBytes } = results;
   const savedVsIndividual = totalIndividualBytes - totalBumpBytes;
   const savedVsIndividualPct = totalIndividualBytes > 0 ? Math.round((savedVsIndividual / totalIndividualBytes) * 100) : 0;
@@ -137,7 +137,7 @@ export const BsvUnifiedMerklePathView = () => {
             <div className="bump-savings-hero__divider" />
             <div className="bump-savings-hero__figure">
               <span className="bump-savings-hero__pct">{savedVsFullTreePct}%</span>
-              <span className="bump-savings-hero__vs">vs full tree</span>
+              <span className="bump-savings-hero__vs">vs full tree each business</span>
             </div>
           </div>
         </div>

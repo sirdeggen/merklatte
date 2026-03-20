@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button } from "@mui/material";
 import { useMerkleTree } from "./MerkleTreeProvider.tsx";
 import { useMerklePath, addNodeToProof } from "./MerkleProofsProvider.tsx";
@@ -52,7 +53,25 @@ function buildProofForTxid(
 
 export const RandomTxSelector = () => {
   const { tree } = useMerkleTree();
-  const { setProof, setPartitions, setPartitionCount } = useMerklePath();
+  const { proof, partitions, partitionCount, setProof, setPartitions, setPartitionCount } = useMerklePath();
+
+  // Keep latest proof/partitions accessible inside effects without re-running on every render
+  const proofRef = useRef(proof);
+  const partitionsRef = useRef(partitions);
+  proofRef.current = proof;
+  partitionsRef.current = partitions;
+
+  useEffect(() => {
+    if (!partitionsRef.current) return; // nothing emulated yet
+    const leaves = collectLeaves(tree);
+    if (leaves.length === 0) return;
+    const biz1Keys = new Set(Object.keys(proofRef.current));
+    const remaining = leaves.filter((l) => !biz1Keys.has(l.hash));
+    const otherCount = Math.max(1, Math.min(partitionCount - 1, remaining.length));
+    const otherGroups = partitionInto(remaining, otherCount);
+    const biz1Hashes = leaves.filter((l) => biz1Keys.has(l.hash)).map((l) => l.hash);
+    setPartitions([biz1Hashes, ...otherGroups.map((g) => g.map((l) => l.hash))]);
+  }, [partitionCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClick = () => {
     const leaves = collectLeaves(tree);

@@ -64,7 +64,7 @@ export const RandomTxSelector = () => {
     const newPartitions = groups.map((g) => g.map((l) => l.hash));
 
     const newProof: MerkleProofByTx = {};
-    for (const leaf of leaves) {
+    for (const leaf of groups[0]) {
       buildProofForTxid(leaf.hash, tree, newProof);
     }
     setProof(newProof);
@@ -78,7 +78,7 @@ export const RandomTxSelector = () => {
       onClick={handleClick}
       sx={{ textTransform: "none", fontWeight: 600 }}
     >
-      Select Random Txs
+      Emulate Merkle Service
     </Button>
   );
 };

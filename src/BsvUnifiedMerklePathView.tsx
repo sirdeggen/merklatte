@@ -25,13 +25,15 @@ interface ComputedResults {
 // --- Component ---
 
 export const BsvUnifiedMerklePathView = () => {
-  const { partitions } = useMerklePath();
+  const { partitions, proof } = useMerklePath();
   const { blockData, fullBlockPath } = useBlockData();
+  const proofKeys = Object.keys(proof);
   const [computing, setComputing] = useState(false);
   const [results, setResults] = useState<ComputedResults | null>(null);
 
   useEffect(() => {
-    if (!partitions || !fullBlockPath || !blockData?.txids) {
+    const hasBiz1 = proofKeys.length > 0;
+    if (!hasBiz1 || !fullBlockPath || !blockData?.txids) {
       setResults(null);
       setComputing(false);
       return;
@@ -41,7 +43,17 @@ export const BsvUnifiedMerklePathView = () => {
     setResults(null);
 
     const id = setTimeout(() => {
-      const groups: GroupResult[] = partitions.map((group) => {
+      // Business 1: txids from live proof, sorted by block offset (ascending)
+      const biz1Txids = proofKeys
+        .filter((h) => blockData.txids.includes(h))
+        .sort((a, b) => blockData.txids.indexOf(a) - blockData.txids.indexOf(b));
+
+      // Businesses 2-N: remaining partitions (if any)
+      const otherPartitions = partitions ? partitions.slice(1) : [];
+
+      const allRawGroups = [biz1Txids, ...otherPartitions];
+
+      const groups: GroupResult[] = allRawGroups.map((group) => {
         const known = group.filter((h) => blockData.txids.includes(h));
         try {
           const mp = fullBlockPath.extract(known);
@@ -51,12 +63,13 @@ export const BsvUnifiedMerklePathView = () => {
         }
       });
 
+      // Individual BUMP sample = lowest-offset tx in Business 1's selection
       let sampleIndividualHex = '';
       let sampleIndividualBytes = 0;
-      const firstKnown = partitions.flat().find((h) => blockData.txids.includes(h));
-      if (firstKnown) {
+      const lowestOffsetTx = biz1Txids[0];
+      if (lowestOffsetTx) {
         try {
-          const mp = fullBlockPath.extract([firstKnown]);
+          const mp = fullBlockPath.extract([lowestOffsetTx]);
           sampleIndividualHex = mp.toHex();
           sampleIndividualBytes = mp.toBinary().length;
         } catch { /* leave as empty */ }
@@ -72,9 +85,9 @@ export const BsvUnifiedMerklePathView = () => {
     }, 0);
 
     return () => clearTimeout(id);
-  }, [partitions, fullBlockPath]);
+  }, [proofKeys.join(','), partitions, fullBlockPath]);
 
-  if (!partitions || !blockData?.txids) {
+  if (proofKeys.length === 0 || !blockData?.txids) {
     return (
       <div className="bump-comparison">
         <div className="bump-comparison__empty">

@@ -1,5 +1,5 @@
 import { MerkleTreeView } from "./MerkleTreeView.tsx";
-import { MerkleTreeProvider } from "./MerkleTreeProvider.tsx";
+import { MerkleTreeProvider, useMerkleTree } from "./MerkleTreeProvider.tsx";
 import { MerkleProofProvider } from "./MerkleProofsProvider.tsx";
 import { ResetProvider } from "./useReset.tsx";
 import { BsvUnifiedMerklePathView } from "./BsvUnifiedMerklePathView.tsx";
@@ -13,6 +13,7 @@ import {
 import CssBaseline from "@mui/material/CssBaseline";
 import { BlockDataProvider } from "./BlockDataProvider.tsx";
 import { BlockInput } from "./BlockInput.tsx";
+import { BumpImportPanel } from "./BumpImportPanel.tsx";
 
 const theme = createTheme({
   palette: {
@@ -33,6 +34,63 @@ const theme = createTheme({
     },
   },
 });
+
+/** Inner component that can access providers and conditionally render layout */
+const AppContent = () => {
+  const { importedTree } = useMerkleTree();
+  const isImportMode = importedTree !== null;
+
+  return (
+    <>
+      {/* Block input controls — hidden in import mode */}
+      {!isImportMode && <BlockInput />}
+
+      {/* Page body */}
+      <Box
+        sx={{
+          position: "fixed",
+          top: "56px",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          overflow: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+        }}
+      >
+        {/* BUMP import panel — always visible */}
+        <BumpImportPanel isImportMode={isImportMode} />
+
+        <Box
+          sx={{
+            px: { xs: 1, md: 2 },
+            pb: 1.5,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{ p: 1.5, overflow: "auto", maxHeight: "48vh", flexShrink: 0 }}
+          >
+            <MerkleTreeView />
+          </Paper>
+
+          {/* Bottom comparison panel — hidden in import mode */}
+          {!isImportMode && (
+            <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+              <BsvUnifiedMerklePathView />
+            </Box>
+          )}
+        </Box>
+      </Box>
+    </>
+  );
+};
 
 function App() {
   return (
@@ -58,7 +116,12 @@ function App() {
       >
         <Typography
           variant="subtitle1"
-          sx={{ fontWeight: 700, color: "#e4e4e7", whiteSpace: "nowrap", mr: 1 }}
+          sx={{
+            fontWeight: 700,
+            color: "#e4e4e7",
+            whiteSpace: "nowrap",
+            mr: 1,
+          }}
         >
           Merkle Path Visualizer
         </Typography>
@@ -66,35 +129,7 @@ function App() {
           <BlockDataProvider>
             <MerkleTreeProvider>
               <MerkleProofProvider>
-                <BlockInput />
-
-                {/* Page body rendered via a portal-like trick — kept inside providers */}
-                <Box
-                  sx={{
-                    position: "fixed",
-                    top: "56px",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    overflow: "hidden",
-                    px: { xs: 1, md: 2 },
-                    pt: 1.5,
-                    pb: 1.5,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1,
-                  }}
-                >
-                  <Paper
-                    elevation={0}
-                    sx={{ p: 1.5, overflow: "auto", maxHeight: "48vh", flexShrink: 0 }}
-                  >
-                    <MerkleTreeView />
-                  </Paper>
-                  <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                    <BsvUnifiedMerklePathView />
-                  </Box>
-                </Box>
+                <AppContent />
               </MerkleProofProvider>
             </MerkleTreeProvider>
           </BlockDataProvider>

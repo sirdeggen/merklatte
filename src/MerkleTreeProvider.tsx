@@ -36,13 +36,27 @@ import { useBlockData } from "./BlockDataProvider.tsx";
 // Convert an @bsv/sdk MerklePath into the visual TreeNode / TreeLeaf hierarchy
 // ---------------------------------------------------------------------------
 export function merklePathToTree(mp: MerklePath): MerkleTree {
-  // mp.path is level-indexed: path[0] = leaves, path[1] = next level, ...
+  // mp.path is level-indexed: path[0] = leaves, path[1] = next level up, ...
   // Each level is a sparse array of { offset, hash?, txid?, duplicate? }
+  //
+  // In a Merkle proof the BUMP stores:
+  //   - Level 0: the txid leaf(s) plus any sibling leaves
+  //   - Level N (N>0): sibling hashes needed at that tree height
+  //
+  // Strategy: maintain a working map of "known nodes" keyed by (height, offset).
+  // Start with level-0 leaves.  Then for each subsequent BUMP level we:
+  //   1. Add the explicit sibling entry as an opaque node (DuplicatedNode) at
+  //      that height.
+  //   2. Pair every pair of known nodes at the current height that share the
+  //      same parent offset into a TreeNode one height up.
+  //   3. Repeat until we've processed all levels.
 
-  // Build a map of nodes at each level keyed by offset
-  const levels: Map<number, TreePart>[] = [];
+  const totalLevels = mp.path.length;
 
-  // Level 0 — leaves
+  // knownNodes[height] = Map<offset, TreePart>
+  const knownNodes: Map<number, TreePart>[] = [];
+
+  // Seed height 0 — leaves from BUMP level 0
   const leafMap = new Map<number, TreePart>();
   for (const leaf of mp.path[0] ?? []) {
     leafMap.set(leaf.offset, {
@@ -52,90 +66,82 @@ export function merklePathToTree(mp: MerklePath): MerkleTree {
       ...(leaf.duplicate ? { duplicated: true as const } : {}),
     } as TreeLeaf);
   }
-  levels[0] = leafMap;
+  knownNodes[0] = leafMap;
 
-  // Higher levels — build nodes with children from the level below
-  const totalLevels = mp.path.length;
-  for (let lvl = 1; lvl < totalLevels; lvl++) {
-    const nodeMap = new Map<number, TreePart>();
-    const pathLevel = mp.path[lvl] ?? [];
+  // Helper: starting at a given height, pair any sibling nodes into parents
+  // and keep going up as long as new pairs are formed.
+  function pairUpward(startHeight: number) {
+    let h = startHeight;
+    while (true) {
+      const currentHeight = knownNodes[h];
+      if (!currentHeight || currentHeight.size === 0) break;
 
-    // Gather all offsets we need at this level: explicitly provided + implied by children
-    const neededOffsets = new Set<number>();
-    for (const node of pathLevel) {
-      neededOffsets.add(node.offset);
+      const nextHeight = h + 1;
+      if (!knownNodes[nextHeight]) knownNodes[nextHeight] = new Map();
+
+      let paired = false;
+      for (const offset of [...currentHeight.keys()]) {
+        const siblingOffset = offset % 2 === 0 ? offset + 1 : offset - 1;
+        if (!currentHeight.has(siblingOffset)) continue;
+
+        const parentOffset = Math.floor(offset / 2);
+        if (knownNodes[nextHeight].has(parentOffset)) continue;
+
+        const leftOffset = parentOffset * 2;
+        const rightOffset = parentOffset * 2 + 1;
+        const left = currentHeight.get(leftOffset)!;
+        const right = currentHeight.get(rightOffset)!;
+
+        knownNodes[nextHeight].set(parentOffset, {
+          height: nextHeight,
+          hash: left.hash + right.hash,
+          offset: parentOffset,
+          left,
+          right,
+        });
+        paired = true;
+      }
+      if (!paired) break;
+      h = nextHeight;
     }
-    // Each child pair at level (lvl-1) with offsets 2n, 2n+1 implies a parent at offset n
-    const childLevel = levels[lvl - 1];
-    if (childLevel) {
-      for (const childOffset of childLevel.keys()) {
-        neededOffsets.add(Math.floor(childOffset / 2));
-      }
-    }
-
-    for (const offset of neededOffsets) {
-      const leftChildOffset = offset * 2;
-      const rightChildOffset = offset * 2 + 1;
-
-      // Try to get children from the previous level
-      let left = childLevel?.get(leftChildOffset);
-      let right = childLevel?.get(rightChildOffset);
-
-      // If a child is missing, check if there's an explicit hash at this level
-      const explicitNode = pathLevel.find((n) => n.offset === offset);
-
-      if (!left && !right) {
-        // No children — this is a provided hash at this level (a proof node).
-        // Use DuplicatedNode shape (duplicated: true) so the type system accepts
-        // a node with height > 0 that has no children.
-        nodeMap.set(offset, {
-          height: lvl,
-          hash: explicitNode?.hash ?? "",
-          offset,
-          duplicated: true as const,
-        } as DuplicatedNode);
-        continue;
-      }
-
-      // Create placeholder children if missing
-      if (!left) {
-        left = {
-          height: lvl - 1,
-          hash: "",
-          offset: leftChildOffset,
-        } as TreeLeaf;
-      }
-      if (!right) {
-        right = {
-          height: lvl - 1,
-          hash: "",
-          offset: rightChildOffset,
-        } as TreeLeaf;
-      }
-
-      // Simplified hash for display (concatenation like the existing code)
-      const hash = explicitNode?.hash ?? left.hash + right.hash;
-
-      nodeMap.set(offset, {
-        height: lvl,
-        hash,
-        offset,
-        left,
-        right,
-      });
-    }
-    levels[lvl] = nodeMap;
   }
 
-  // The root is at the highest level, offset 0
-  const rootLevel = levels[totalLevels - 1];
-  if (rootLevel && rootLevel.size > 0) {
-    const root = rootLevel.get(0) ?? rootLevel.values().next().value;
+  // First, pair anything already possible at level 0 (e.g. two sibling txid leaves)
+  pairUpward(0);
+
+  // Process each BUMP level 1..N.
+  // Add the explicit sibling entry, then pair from that height upward.
+  for (let lvl = 1; lvl < totalLevels; lvl++) {
+    if (!knownNodes[lvl]) knownNodes[lvl] = new Map();
+    const heightMap = knownNodes[lvl];
+
+    for (const entry of mp.path[lvl] ?? []) {
+      if (!heightMap.has(entry.offset)) {
+        heightMap.set(entry.offset, {
+          height: lvl,
+          hash: entry.hash ?? "",
+          offset: entry.offset,
+          duplicated: true as const,
+        } as DuplicatedNode);
+      }
+    }
+
+    // After adding the sibling, try to pair from this height upward
+    pairUpward(lvl);
+  }
+
+  // The root is at the highest level with a node at offset 0
+  for (let h = knownNodes.length - 1; h >= 0; h--) {
+    const level = knownNodes[h];
+    if (!level) continue;
+    const root =
+      level.get(0) ??
+      (level.size === 1 ? level.values().next().value : undefined);
     if (root && "left" in root) return root as MerkleTree;
   }
 
   // Fallback — if the BUMP only has one level (single tx block), wrap it
-  const singleLeaf = levels[0]?.values().next().value;
+  const singleLeaf = knownNodes[0]?.values().next().value;
   if (singleLeaf) {
     return {
       height: 1,

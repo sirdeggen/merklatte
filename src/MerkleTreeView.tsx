@@ -6,6 +6,7 @@ import {
   TreePart,
   MerkleTree,
   DuplicatedNode,
+  ProofNode,
   MerkleProofByTx,
 } from "./merkle-tree-data";
 import { useMerkleTree } from "./MerkleTreeProvider.tsx";
@@ -82,7 +83,7 @@ const MerkleRoot: FC<{ tree: MerkleTree }> = ({ tree }) => (
   </li>
 );
 
-function isLeaf(part: TreePart): part is TreeLeaf | DuplicatedNode {
+function isLeaf(part: TreePart): part is TreeLeaf | DuplicatedNode | ProofNode {
   return !("left" in part && "right" in part);
 }
 
@@ -144,7 +145,7 @@ const MerkleNode: FC<{
 };
 
 const MerkleTreeLeaf: FC<{
-  part: TreeLeaf | DuplicatedNode;
+  part: TreeLeaf | DuplicatedNode | ProofNode;
   onSelectionChange?: (selected: boolean, hash: string) => void;
 }> = ({ part, onSelectionChange = () => {} }) => {
   const merkleProof = useMerklePath();

@@ -1,4 +1,4 @@
-export type TreePart = TreeNode | TreeLeaf | DuplicatedNode;
+export type TreePart = TreeNode | TreeLeaf | DuplicatedNode | ProofNode;
 
 export interface TreeLeaf {
   height: 0;
@@ -12,6 +12,15 @@ export interface DuplicatedNode {
   hash: string;
   offset: number;
   duplicated: true;
+}
+
+/** An opaque proof-path hash at any tree height (no children, not duplicated). */
+export interface ProofNode {
+  height: number;
+  hash: string;
+  offset: number;
+  duplicated?: false;
+  proof: true;
 }
 
 export interface TreeNode {

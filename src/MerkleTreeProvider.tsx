@@ -11,6 +11,7 @@ import {
   TreeLeaf,
   TreePart,
   DuplicatedNode,
+  ProofNode,
 } from "./merkle-tree-data";
 import { chunk } from "lodash";
 import { useReset } from "./useReset.tsx";
@@ -117,12 +118,21 @@ export function merklePathToTree(mp: MerklePath): MerkleTree {
 
     for (const entry of mp.path[lvl] ?? []) {
       if (!heightMap.has(entry.offset)) {
-        heightMap.set(entry.offset, {
-          height: lvl,
-          hash: entry.hash ?? "",
-          offset: entry.offset,
-          duplicated: true as const,
-        } as DuplicatedNode);
+        if (entry.duplicate) {
+          heightMap.set(entry.offset, {
+            height: lvl,
+            hash: entry.hash ?? "",
+            offset: entry.offset,
+            duplicated: true,
+          } as DuplicatedNode);
+        } else {
+          heightMap.set(entry.offset, {
+            height: lvl,
+            hash: entry.hash ?? "",
+            offset: entry.offset,
+            proof: true,
+          } as ProofNode);
+        }
       }
     }
 
